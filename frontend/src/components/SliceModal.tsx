@@ -13,7 +13,6 @@ import {
   type SlicerBundle,
   type SlicerCloudStatus,
   type UnifiedPreset,
-  type UnifiedPresetsBySlot,
   type UnifiedPresetsResponse,
 } from '../api/client';
 import { useSliceJobTracker } from '../contexts/SliceJobTrackerContext';
@@ -24,7 +23,6 @@ import { normalizeColorForCompare, colorsAreSimilar } from '../utils/amsHelpers'
 import {
   presetCompatibility,
   buildCompatibilityIndex,
-  EMPTY_COMPATIBILITY_INDEX,
   type PrinterCompatibilityIndex,
 } from '../utils/slicerPrinterMatch';
 import { PresetCombobox } from './PresetCombobox';
