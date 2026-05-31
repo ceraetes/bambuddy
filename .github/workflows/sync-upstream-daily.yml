@@ -1,0 +1,127 @@
+name: Sync upstream daily
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: sync-upstream-daily
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Merge upstream dev when maziggy daily changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get upstream daily digest
+        id: upstream
+        run: |
+          TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:maziggy/bambuddy:pull" \
+            | jq -r '.token')
+          DIGEST=$(curl -sI -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+            -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+            "https://ghcr.io/v2/maziggy/bambuddy/manifests/daily" \
+            | grep -i "docker-content-digest" | tr -d '\r' | awk '{print $2}')
+          if [ -z "$DIGEST" ]; then
+            echo "ERROR: Could not fetch maziggy/bambuddy:daily digest"
+            exit 1
+          fi
+          SHORT=$(echo "$DIGEST" | cut -c8-15)
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "short=$SHORT" >> "$GITHUB_OUTPUT"
+          echo "Upstream daily digest: $DIGEST"
+
+      - name: Compare to last seen digest
+        id: compare
+        run: |
+          STORED=""
+          if [ -f .github/upstream-daily-digest ]; then
+            STORED=$(grep '^sha256:' .github/upstream-daily-digest | tr -d '[:space:]' || true)
+          fi
+          echo "stored=$STORED" >> "$GITHUB_OUTPUT"
+          if [ "$STORED" = "${{ steps.upstream.outputs.digest }}" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No change — upstream daily digest unchanged."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Digest changed (stored=${STORED:-none})."
+          fi
+
+      - name: Stop (digest unchanged)
+        if: steps.compare.outputs.changed != 'true'
+        run: echo "Nothing to do."
+
+      - name: Configure git
+        if: steps.compare.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch and merge maziggy/dev
+        id: merge
+        if: steps.compare.outputs.changed == 'true'
+        continue-on-error: true
+        run: |
+          git remote add upstream https://github.com/maziggy/bambuddy.git || true
+          git fetch upstream dev
+          set +e
+          git merge upstream/dev --no-edit
+          MERGE_RC=$?
+          set -e
+          if [ "$MERGE_RC" -eq 0 ]; then
+            echo "status=clean" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only --diff-filter=U > /tmp/conflict-files.txt || true
+          git merge --abort
+          echo "status=conflict" >> "$GITHUB_OUTPUT"
+          exit 1
+
+      - name: Open issue on merge conflict
+        if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.status == 'conflict'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FILES=$(cat /tmp/conflict-files.txt 2>/dev/null || echo "(could not list files)")
+          BODY_FILE=$(mktemp)
+          {
+            echo "A new \`ghcr.io/maziggy/bambuddy:daily\` image was published (digest \`${{ steps.upstream.outputs.digest }}\`)."
+            echo ""
+            echo "Automatic merge of \`maziggy/bambuddy\` \`dev\` into \`ceraetes/bambuddy\` \`dev\` failed with conflicts."
+            echo ""
+            echo "**Conflicting files:**"
+            echo '```'
+            echo "$FILES"
+            echo '```'
+            echo ""
+            echo "Resolve locally, then \`git push origin dev\` to trigger \`build-dev-image\`."
+          } > "$BODY_FILE"
+          gh issue create \
+            --title "Upstream daily sync failed: merge conflict (${{ steps.upstream.outputs.short }})" \
+            --body-file "$BODY_FILE" || echo "::warning::Could not create issue"
+          exit 1
+
+      - name: Record digest and push
+        if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.status == 'clean'
+        run: |
+          echo "${{ steps.upstream.outputs.digest }}" > .github/upstream-daily-digest
+          git add .github/upstream-daily-digest
+          git diff --staged --quiet && git diff --quiet || git commit -m "chore: sync upstream daily (${{ steps.upstream.outputs.short }})"
+          git push origin dev
+
+      - name: Fail job after merge conflict
+        if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.status == 'conflict'
+        run: exit 1
