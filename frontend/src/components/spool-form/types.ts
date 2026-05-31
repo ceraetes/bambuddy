@@ -116,6 +116,9 @@ export interface FilamentSectionProps extends SectionProps {
   quantity: number;
   onQuantityChange: (value: number) => void;
   errors?: Partial<Record<keyof SpoolFormData, string>>;
+  // Slicer preset inherited from the parent Filament (Spoolman); shown as a
+  // placeholder until the user picks a spool-level override.
+  inheritedPresetName?: string | null;
 }
 
 // Color section props

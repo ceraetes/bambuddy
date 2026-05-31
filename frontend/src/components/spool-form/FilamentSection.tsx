@@ -20,6 +20,7 @@ export function FilamentSection({
   quantity,
   onQuantityChange,
   errors,
+  inheritedPresetName,
 }: FilamentSectionProps) {
   const { t } = useTranslation();
   const [presetDropdownOpen, setPresetDropdownOpen] = useState(false);
@@ -146,7 +147,7 @@ export function FilamentSection({
             <input
               type="text"
               className="w-full pl-9 pr-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white text-sm placeholder:text-bambu-gray/50 focus:outline-none focus:border-bambu-green"
-              placeholder={t('inventory.searchPresets')}
+              placeholder={inheritedPresetName || t('inventory.searchPresets')}
               value={presetInputValue}
               onChange={(e) => {
                 setPresetInputValue(e.target.value);
@@ -183,6 +184,11 @@ export function FilamentSection({
           {selectedPresetOption && (
             <div className="mt-1 text-xs text-bambu-gray">
               {t('inventory.selectedPreset')}: <span className="font-mono text-bambu-green">{selectedPresetOption.code}</span>
+            </div>
+          )}
+          {!selectedPresetOption && inheritedPresetName && !presetInputValue && (
+            <div className="mt-1 text-xs text-bambu-gray">
+              {t('inventory.inheritedFromFilament', 'Inherited from filament')}
             </div>
           )}
           {errors?.slicer_filament && (

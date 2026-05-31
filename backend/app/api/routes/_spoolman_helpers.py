@@ -40,6 +40,7 @@ class MappedSpoolFields(TypedDict):
     last_weighed_at: None
     slicer_filament: None
     slicer_filament_name: str | None
+    slicer_filament_source: str | None
     nozzle_temp_min: int | None
     nozzle_temp_max: None
     note: str | None
@@ -198,6 +199,52 @@ def _extract_extra_str(extra: dict, key: str) -> str:
     return decoded if isinstance(decoded, str) else ""
 
 
+class ResolvedSlicerProfile(TypedDict):
+    """Slicer preset id, display name, and where the mapping was resolved from."""
+
+    id: str | None
+    name: str | None
+    source: str | None  # "spool" | "filament" | "filament_name" | None
+
+
+def resolve_slicer_filament_from_spoolman(spool: dict) -> ResolvedSlicerProfile:
+    """Resolve BambuStudio slicer profile from spool extra, then filament extra.
+
+    Profile id/name come from ``bambu_slicer_filament`` / ``_name`` in each
+    extra dict (JSON-encoded strings). When no id is stored, ``filament.name``
+    is used for display only and ``source`` is ``"filament_name"``.
+    """
+    extra: dict = spool.get("extra") or {}
+    filament: dict = spool.get("filament") or {}
+    filament_extra: dict = filament.get("extra") or {}
+    filament_name: str = (filament.get("name") or "").strip()
+
+    spool_id = _extract_extra_str(extra, "bambu_slicer_filament") or None
+    filament_id = _extract_extra_str(filament_extra, "bambu_slicer_filament") or None
+
+    spool_name = _extract_extra_str(extra, "bambu_slicer_filament_name") or None
+    filament_pname = _extract_extra_str(filament_extra, "bambu_slicer_filament_name") or None
+
+    if spool_id is not None:
+        source: str | None = "spool"
+        resolved_id: str | None = spool_id
+    elif filament_id is not None:
+        source = "filament"
+        resolved_id = filament_id
+    else:
+        source = None
+        resolved_id = None
+
+    # Name follows the same precedence; when no override exists, fall back to
+    # the native filament name (display-only). Keep `source` aligned with the
+    # *mapping* origin: a name-only resolution is reported as "filament_name".
+    resolved_name = spool_name or filament_pname or (filament_name or None)
+    if resolved_id is None and resolved_name is not None:
+        source = "filament_name"
+
+    return {"id": resolved_id, "name": resolved_name, "source": source}
+
+
 def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     """Convert a raw Spoolman spool dict to the InventorySpool-compatible format.
 
@@ -303,6 +350,8 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
     nozzle_temp_raw = filament.get("settings_extruder_temp")
     nozzle_temp_min: int | None = _safe_int(nozzle_temp_raw, 0) or None
 
+    slicer_profile = resolve_slicer_filament_from_spoolman(spool)
+
     return {
         "id": spool_id,
         "material": material,
@@ -321,13 +370,9 @@ def _map_spoolman_spool(spool: dict) -> MappedSpoolFields:
         "weight_locked": False,
         "last_scale_weight": None,
         "last_weighed_at": None,
-        # BambuStudio slicer preset — Spoolman has no native field, so the
-        # update endpoint persists these under bambu_slicer_filament[_name]
-        # in the spool's extra dict. Values are JSON-encoded strings; an
-        # empty string ("") means cleared. Falls back to Spoolman's
-        # filament_name for slicer_filament_name when nothing is stored.
-        "slicer_filament": (_extract_extra_str(extra, "bambu_slicer_filament") or None),
-        "slicer_filament_name": (_extract_extra_str(extra, "bambu_slicer_filament_name") or (filament_name or None)),
+        "slicer_filament": slicer_profile["id"],
+        "slicer_filament_name": slicer_profile["name"],
+        "slicer_filament_source": slicer_profile["source"],
         "nozzle_temp_min": nozzle_temp_min,
         "nozzle_temp_max": None,
         "note": spool.get("comment") or None,

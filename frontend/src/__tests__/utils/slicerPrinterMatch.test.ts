@@ -3,6 +3,7 @@ import {
   buildCompatibilityIndex,
   matchesPrinterModelSuffix,
   presetCompatibility,
+  sortPresetsByPrinterTier,
   EMPTY_COMPATIBILITY_INDEX,
   type CompatibilityBundle,
 } from '../../utils/slicerPrinterMatch';
@@ -484,5 +485,62 @@ describe('presetCompatibility with Bambu cloud A1M rename (#1649)', () => {
     expect(
       presetCompatibility({ name: '0.20mm Standard @BBL A1M' }, 'process', A1, idx),
     ).toBe('mismatch');
+  });
+});
+
+describe('sortPresetsByPrinterTier', () => {
+  const index = buildCompatibilityIndex([], PRINTER_MODELS);
+
+  it('orders match → generic/unknown → other-printer mismatch', () => {
+    // Input deliberately scrambles the tiers; @BBL tags decide compatibility.
+    const filaments = [
+      { name: 'Bambu PLA Basic @BBL P1S' }, // mismatch (P1S, selected is X1C)
+      { name: 'Generic PLA' }, // unknown (no @BBL tag)
+      { name: 'Bambu PLA Basic @BBL X1C' }, // match
+    ];
+    const sorted = sortPresetsByPrinterTier(filaments, 'filament', X1C, index);
+    expect(sorted.map((p) => p.name)).toEqual([
+      'Bambu PLA Basic @BBL X1C',
+      'Generic PLA',
+      'Bambu PLA Basic @BBL P1S',
+    ]);
+  });
+
+  it('preserves input order within a tier (stable)', () => {
+    const processes = [
+      { name: '0.20mm Standard @BBL X1C' }, // match
+      { name: '0.16mm Optimal @BBL X1C' }, // match
+      { name: 'Custom Untagged A' }, // unknown
+      { name: 'Custom Untagged B' }, // unknown
+    ];
+    const sorted = sortPresetsByPrinterTier(processes, 'process', X1C, index);
+    expect(sorted.map((p) => p.name)).toEqual([
+      '0.20mm Standard @BBL X1C',
+      '0.16mm Optimal @BBL X1C',
+      'Custom Untagged A',
+      'Custom Untagged B',
+    ]);
+  });
+
+  it('leaves order unchanged when no printer is selected', () => {
+    const filaments = [
+      { name: 'Bambu PLA Basic @BBL P1S' },
+      { name: 'Bambu PLA Basic @BBL X1C' },
+    ];
+    const sorted = sortPresetsByPrinterTier(filaments, 'filament', null, index);
+    expect(sorted.map((p) => p.name)).toEqual([
+      'Bambu PLA Basic @BBL P1S',
+      'Bambu PLA Basic @BBL X1C',
+    ]);
+  });
+
+  it('does not mutate the input array', () => {
+    const filaments = [
+      { name: 'Bambu PLA Basic @BBL P1S' },
+      { name: 'Bambu PLA Basic @BBL X1C' },
+    ];
+    const before = filaments.map((p) => p.name);
+    sortPresetsByPrinterTier(filaments, 'filament', X1C, index);
+    expect(filaments.map((p) => p.name)).toEqual(before);
   });
 });

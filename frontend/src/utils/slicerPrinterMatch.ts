@@ -269,3 +269,29 @@ export function presetCompatibility(
   // printer their cloud catalogue includes.
   return classifyByBambuName(preset.name, selectedPrinterName, index.bambuModelByShortCode);
 }
+
+const PRINTER_TIER_RANK: Record<PrinterCompatibility, number> = {
+  match: 0,
+  unknown: 1,
+  mismatch: 2,
+};
+
+/**
+ * Stable-sort process / filament presets: printer match first, generic presets
+ * next, other-printer presets last. Order within each band is preserved.
+ */
+export function sortPresetsByPrinterTier<T extends { name: string; compatible_printers?: string[] | null }>(
+  presets: readonly T[],
+  slot: 'process' | 'filament',
+  selectedPrinterName: string | null,
+  index: PrinterCompatibilityIndex,
+): T[] {
+  return presets
+    .map((preset, i) => ({
+      preset,
+      i,
+      rank: PRINTER_TIER_RANK[presetCompatibility(preset, slot, selectedPrinterName, index)],
+    }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .map((entry) => entry.preset);
+}

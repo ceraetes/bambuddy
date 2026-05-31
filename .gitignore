@@ -26,6 +26,10 @@ frontend/node_modules/
 frontend/coverage/
 npm-debug.log*
 
+# Vite build output (rebuilt by Docker, CI, and native install.sh)
+static/assets/
+static/index.html
+
 # Database
 *.db
 *.db-journal

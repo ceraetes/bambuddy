@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api,
+  type InventorySpool,
   type PresetRef,
   type PresetSource,
   type SliceBundleSpec,
@@ -26,6 +27,8 @@ import {
   EMPTY_COMPATIBILITY_INDEX,
   type PrinterCompatibilityIndex,
 } from '../utils/slicerPrinterMatch';
+import { PresetCombobox } from './PresetCombobox';
+import { matchPresetByProfile, type PrinterModelMap } from '../utils/slicerProfileResolve';
 
 export type SliceSource =
   | { kind: 'libraryFile'; id: number; filename: string }
@@ -167,20 +170,71 @@ function pickFilamentForSlot(
   return best.ref;
 }
 
-function toRefValue(ref: PresetRef | null): string {
-  // The HTML `<select>` value space is flat strings; encode source + id so
-  // the same preset name can live in multiple tiers without collision.
-  return ref ? `${ref.source}:${ref.id}` : '';
+function flattenFilamentPresets(by: UnifiedPresetsResponse): UnifiedPreset[] {
+  const out: UnifiedPreset[] = [];
+  for (const tier of SLICE_MODAL_TIER_ORDER) {
+    out.push(...by[tier].filament);
+  }
+  return out;
 }
 
-function fromRefValue(raw: string): PresetRef | null {
-  if (!raw) return null;
-  const idx = raw.indexOf(':');
-  if (idx < 0) return null;
-  const source = raw.slice(0, idx) as PresetSource;
-  const id = raw.slice(idx + 1);
-  if (source !== 'orca_cloud' && source !== 'cloud' && source !== 'local' && source !== 'standard') return null;
-  return { source, id };
+function findSpoolForSlot(
+  spools: readonly InventorySpool[],
+  required: { type: string; color: string },
+): InventorySpool | null {
+  const reqType = required.type.trim().toUpperCase();
+  const reqColor = normalizeColorForCompare(required.color);
+  let best: { spool: InventorySpool; score: number } | null = null;
+  for (const spool of spools) {
+    if (spool.archived_at) continue;
+    const profile = spool.slicer_filament_name || spool.slicer_filament;
+    if (!profile) continue;
+    let score = 0;
+    const spoolType = (spool.material ?? '').trim().toUpperCase();
+    if (reqType && spoolType && reqType === spoolType) score += 10;
+    const spoolColor = normalizeColorForCompare(spool.rgba ?? '');
+    if (reqColor && spoolColor) {
+      if (spoolColor === reqColor) score += 5;
+      else if (colorsAreSimilar(spool.rgba ?? '', required.color)) score += 2;
+    }
+    if (best == null || score > best.score) {
+      best = { spool, score };
+    }
+  }
+  return best && best.score > 0 ? best.spool : null;
+}
+
+function pickFilamentFromSpoolman(
+  by: UnifiedPresetsResponse,
+  spool: InventorySpool,
+  printerName: string | null,
+  compatIndex: PrinterCompatibilityIndex,
+  models: PrinterModelMap,
+): PresetRef | null {
+  const stored = spool.slicer_filament_name || spool.slicer_filament;
+  if (!stored) return null;
+  const matched = matchPresetByProfile(flattenFilamentPresets(by), stored, printerName, models);
+  if (!matched) return null;
+  if (presetCompatibility(matched, 'filament', printerName, compatIndex) !== 'match') {
+    return null;
+  }
+  return { source: matched.source, id: matched.id };
+}
+
+function pickFilamentForSlotWithSpoolman(
+  by: UnifiedPresetsResponse,
+  required: { type: string; color: string },
+  printerName: string | null,
+  compatIndex: PrinterCompatibilityIndex,
+  spools: readonly InventorySpool[],
+  models: PrinterModelMap,
+): PresetRef | null {
+  const spool = findSpoolForSlot(spools, required);
+  if (spool) {
+    const fromSpoolman = pickFilamentFromSpoolman(by, spool, printerName, compatIndex, models);
+    if (fromSpoolman) return fromSpoolman;
+  }
+  return pickFilamentForSlot(by, required, printerName, compatIndex);
 }
 
 // Inline spinner for the filament-requirements query. The backend runs a
@@ -499,6 +553,24 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     [bundlesQuery.data, printerModelsQuery.data],
   );
 
+  const { data: spoolmanSettings } = useQuery({
+    queryKey: ['spoolman-settings'],
+    queryFn: api.getSpoolmanSettings,
+    staleTime: 5 * 60 * 1000,
+  });
+  const spoolmanMode =
+    spoolmanSettings?.spoolman_enabled === 'true' && !!spoolmanSettings?.spoolman_url;
+
+  const inventorySpoolsQuery = useQuery({
+    queryKey: spoolmanMode ? ['spoolman-inventory-spools'] : ['inventory-spools'],
+    queryFn: () =>
+      spoolmanMode ? api.getSpoolmanInventorySpools(false) : api.getSpools(false),
+    staleTime: 60_000,
+    enabled: !platesQuery.isLoading && !needsPlatePicker,
+  });
+
+  const printerModels = (printerModelsQuery.data ?? {}) as PrinterModelMap;
+
   // Printer / process preset names the source 3MF was prepared with. The
   // plates query resolves before the presets query (the latter is gated on
   // it), so these are known by the time the pre-pick effects run.
@@ -536,15 +608,12 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     });
   }, [presetsQuery.data, selectedPrinterName, compatIndex, embeddedProcess]);
 
-  // Filament pre-pick: re-runs when the active filament-slot count changes
-  // (plate selection, single-plate metadata arriving) or the selected printer
-  // changes. Each slot scores every available filament preset against the
-  // slot's required (type, colour); an existing pick (incl. a user override)
-  // is kept as long as it's still compatible with the selected printer, while
-  // null slots and printer-incompatible picks are re-picked (#1325).
+  // Filament pre-pick: prefer Spoolman profile when it maps to a Tier-1 preset,
+  // else score by type/colour. Existing manual picks are kept when still compatible.
   useEffect(() => {
     const data = presetsQuery.data;
     if (!data) return;
+    const spools = inventorySpoolsQuery.data ?? [];
     setFilamentPresets((current) => {
       return filamentSlots.map((slot, i) => {
         const cur = current[i] ?? null;
@@ -554,15 +623,24 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
             return cur;
           }
         }
-        return pickFilamentForSlot(
+        return pickFilamentForSlotWithSpoolman(
           data,
           { type: slot.type, color: slot.color },
           selectedPrinterName,
           compatIndex,
+          spools,
+          printerModels,
         );
       });
     });
-  }, [presetsQuery.data, filamentSlots, selectedPrinterName, compatIndex]);
+  }, [
+    presetsQuery.data,
+    filamentSlots,
+    selectedPrinterName,
+    compatIndex,
+    inventorySpoolsQuery.data,
+    printerModels,
+  ]);
 
   // Bundle-mode auto-pick: when the user picks a bundle (or the slot count
   // changes after the picker is open), default the process to the bundle's
@@ -787,7 +865,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                   filament dropdowns render below in their stead. */}
               {!isBundleMode && (
                 <>
-                  <PresetDropdown
+                  <PresetCombobox
                     label={t('slice.printer')}
                     slot="printer"
                     data={presetsQuery.data}
@@ -795,7 +873,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                     onChange={setPrinterPreset}
                     disabled={isEnqueuing}
                   />
-                  <PresetDropdown
+                  <PresetCombobox
                     label={t('slice.process')}
                     slot="process"
                     data={presetsQuery.data}
@@ -902,12 +980,19 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                   const label = isUsed
                     ? baseLabel
                     : `${baseLabel} ${t('slice.notUsedByPlate')}`;
+                  const slotSpool =
+                    inventorySpoolsQuery.data && presetsQuery.data
+                      ? findSpoolForSlot(inventorySpoolsQuery.data, {
+                          type: slot.type,
+                          color: slot.color,
+                        })
+                      : null;
                   return (
-                    <PresetDropdown
+                    <PresetCombobox
                       key={`filament-${idx}`}
                       label={label}
                       slot="filament"
-                      data={presetsQuery.data}
+                      data={presetsQuery.data!}
                       value={filamentPresets[idx] ?? null}
                       onChange={(ref) =>
                         setFilamentPresets((current) => {
@@ -922,6 +1007,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                       swatchColor={filamentSlots.length > 1 ? slot.color : undefined}
                       selectedPrinterName={selectedPrinterName}
                       compatIndex={compatIndex}
+                      slotSpool={slotSpool}
                     />
                   );
                 })
@@ -1105,131 +1191,6 @@ function BedTypeDropdown({
             {t(opt.labelKey, opt.fallback)}
           </option>
         ))}
-      </select>
-    </label>
-  );
-}
-
-interface PresetDropdownProps {
-  label: string;
-  slot: Slot;
-  data: UnifiedPresetsResponse;
-  value: PresetRef | null;
-  onChange: (ref: PresetRef | null) => void;
-  disabled?: boolean;
-  // Optional colour swatch shown next to the label — used for multi-color
-  // filament slots so the user can see at a glance which slot they're
-  // configuring against the source 3MF's per-slot colour.
-  swatchColor?: string;
-  // Selected printer context (#1325). When provided for a process / filament
-  // slot, presets that resolve to a different printer (per the uploaded
-  // Slicer Bundles in compatIndex) move into a trailing "Other printers"
-  // group instead of the main tier list.
-  selectedPrinterName?: string | null;
-  compatIndex?: PrinterCompatibilityIndex;
-}
-
-function PresetDropdown({
-  label,
-  slot,
-  data,
-  value,
-  onChange,
-  disabled,
-  swatchColor,
-  selectedPrinterName,
-  compatIndex,
-}: PresetDropdownProps) {
-  const { t } = useTranslation();
-
-  // Tier sections (imported → cloud → standard), plus — for a process /
-  // filament slot with a selected printer — a trailing group of presets that
-  // resolve to a different printer (#1325). Compatibility-unknown presets
-  // stay in their tier, so a custom / untagged preset is never hidden, and
-  // empty sections collapse out.
-  const { sections, otherEntries } = useMemo(() => {
-    const tiers: { key: keyof UnifiedPresetsResponse; label: string; fallback: string }[] = [
-      { key: 'orca_cloud', label: 'slice.tier.orcaCloud', fallback: 'Orca Cloud' },
-      { key: 'local', label: 'slice.tier.local', fallback: 'Imported' },
-      { key: 'cloud', label: 'slice.tier.cloud', fallback: 'Bambu Cloud' },
-      { key: 'standard', label: 'slice.tier.standard', fallback: 'Standard' },
-    ];
-    const filterByPrinter = slot !== 'printer';
-    const compatSections: { tierLabel: string; entries: UnifiedPreset[] }[] = [];
-    const other: UnifiedPreset[] = [];
-    for (const { key, label: lk, fallback } of tiers) {
-      const entries = (data[key] as UnifiedPresetsBySlot)[slot];
-      if (!filterByPrinter) {
-        if (entries.length > 0) compatSections.push({ tierLabel: t(lk, fallback), entries });
-        continue;
-      }
-      const compatible: UnifiedPreset[] = [];
-      for (const p of entries) {
-        if (
-          presetCompatibility(
-            p,
-            // filterByPrinter is true here, so slot is never 'printer'.
-            slot as 'process' | 'filament',
-            selectedPrinterName ?? null,
-            compatIndex ?? EMPTY_COMPATIBILITY_INDEX,
-          ) === 'mismatch'
-        ) {
-          other.push(p);
-        } else {
-          compatible.push(p);
-        }
-      }
-      if (compatible.length > 0) {
-        compatSections.push({ tierLabel: t(lk, fallback), entries: compatible });
-      }
-    }
-    return { sections: compatSections, otherEntries: other };
-  }, [data, slot, t, selectedPrinterName, compatIndex]);
-
-  const totalEntries =
-    sections.reduce((sum, s) => sum + s.entries.length, 0) + otherEntries.length;
-
-  return (
-    <label className="block">
-      <span className="flex items-center gap-2 text-xs text-bambu-gray mb-1">
-        {swatchColor && (
-          <span
-            className="inline-block w-3 h-3 rounded-full border border-bambu-dark-tertiary"
-            style={{ backgroundColor: swatchColor || 'transparent' }}
-            aria-hidden
-          />
-        )}
-        <span>{label}</span>
-      </span>
-      <select
-        value={toRefValue(value)}
-        onChange={(e) => onChange(fromRefValue(e.target.value))}
-        disabled={disabled || totalEntries === 0}
-        className="w-full px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
-      >
-        <option value="">
-          {totalEntries === 0
-            ? t('slice.noPresetsForSlot')
-            : t('slice.selectPreset')}
-        </option>
-        {sections.map((section) => (
-          <optgroup key={section.tierLabel} label={section.tierLabel}>
-            {section.entries.map((p) => (
-              <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>
-                {p.name}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-        {otherEntries.length > 0 && (
-          <optgroup label={t('slice.otherPrinters')}>
-            {otherEntries.map((p) => (
-              <option key={`${p.source}:${p.id}`} value={`${p.source}:${p.id}`}>
-                {p.name}
-              </option>
-            ))}
-          </optgroup>
-        )}
       </select>
     </label>
   );

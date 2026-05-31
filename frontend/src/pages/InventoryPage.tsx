@@ -225,11 +225,24 @@ const columnCells: Record<string, (ctx: CellCtx) => ReactNode> = {
   brand: ({ spool }) => (
     <span className="text-sm text-bambu-gray">{spool.brand || '-'}</span>
   ),
-  slicer_filament: ({ spool }) => (
-    <span className="text-sm text-bambu-gray" title={spool.slicer_filament || undefined}>
-      {spool.slicer_filament_name || spool.slicer_filament || '-'}
-    </span>
-  ),
+  slicer_filament: ({ spool, t }) => {
+    const label = spool.slicer_filament_name || spool.slicer_filament || '-';
+    const inherited = spool.slicer_filament_source === 'filament';
+    const titleParts = [spool.slicer_filament || undefined];
+    if (inherited) {
+      titleParts.push(t('inventory.inheritedFromFilament'));
+    }
+    return (
+      <span className="text-sm text-bambu-gray" title={titleParts.filter(Boolean).join(' · ') || undefined}>
+        {label}
+        {inherited && (
+          <span className="ml-1 text-xs text-bambu-gray/60" title={t('inventory.inheritedFromFilament')}>
+            ↳
+          </span>
+        )}
+      </span>
+    );
+  },
   location: ({ spool, assignmentMap }) => {
     const assignment = assignmentMap[spool.id];
     if (!assignment) return <span className="text-sm text-bambu-gray">-</span>;
