@@ -525,6 +525,80 @@ class TestMapSpoolmanSpoolSlicerFilament:
         assert result["slicer_filament"] == "GFL05"
 
 
+class TestSlicerFilamentHierarchy:
+    """Hierarchical slicer-profile resolution in _map_spoolman_spool."""
+
+    def test_spool_only_reports_source_spool(self):
+        spool = {
+            **MINIMAL_SPOOL,
+            "extra": {
+                "bambu_slicer_filament": '"GFL05"',
+                "bambu_slicer_filament_name": '"Bambu PLA Basic @BBL"',
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["slicer_filament"] == "GFL05"
+        assert result["slicer_filament_name"] == "Bambu PLA Basic @BBL"
+        assert result["slicer_filament_source"] == "spool"
+
+    def test_inherited_from_filament_extra(self):
+        # Spool has no own mapping; the parent Filament's extra supplies it.
+        spool = {
+            **MINIMAL_SPOOL,
+            "extra": {},
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "extra": {
+                    "bambu_slicer_filament": '"GFL05"',
+                    "bambu_slicer_filament_name": '"Bambu PLA Basic @BBL"',
+                },
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["slicer_filament"] == "GFL05"
+        assert result["slicer_filament_name"] == "Bambu PLA Basic @BBL"
+        assert result["slicer_filament_source"] == "filament"
+
+    def test_spool_overrides_filament(self):
+        # Both levels set the mapping → the physical spool wins.
+        spool = {
+            **MINIMAL_SPOOL,
+            "extra": {"bambu_slicer_filament": '"PFUSspool"'},
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "extra": {"bambu_slicer_filament": '"GFL05"'},
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["slicer_filament"] == "PFUSspool"
+        assert result["slicer_filament_source"] == "spool"
+
+    def test_name_only_fallback_to_filament_name(self):
+        # No mapping anywhere → display name falls back to filament.name and
+        # the source reports the display-only origin (no real mapping).
+        spool = {**MINIMAL_SPOOL, "extra": {}}
+        result = _map_spoolman_spool(spool)
+        assert result["slicer_filament"] is None
+        assert result["slicer_filament_name"] == "PLA Basic"
+        assert result["slicer_filament_source"] == "filament_name"
+
+    def test_filament_name_override_inherited(self):
+        # Filament extra carries only the display name (no id); spool has none.
+        spool = {
+            **MINIMAL_SPOOL,
+            "extra": {},
+            "filament": {
+                **MINIMAL_SPOOL["filament"],
+                "extra": {"bambu_slicer_filament_name": '"Custom Display Name"'},
+            },
+        }
+        result = _map_spoolman_spool(spool)
+        assert result["slicer_filament"] is None
+        assert result["slicer_filament_name"] == "Custom Display Name"
+        # No id mapped anywhere → display-only resolution.
+        assert result["slicer_filament_source"] == "filament_name"
+
+
 class TestExtractExtraStr:
     """JSON-encoded extra-string unwrapper used by _map_spoolman_spool."""
 

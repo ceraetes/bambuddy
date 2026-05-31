@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Check, AlertTriangle, RefreshCw, Unlink } from 'lucide-react';
+import { Check, AlertTriangle, RefreshCw, Unlink, CornerDownRight } from 'lucide-react';
 import type { InventorySpool } from '../../api/client';
 import { spoolbuddyApi, api } from '../../api/client';
 import { SpoolIcon } from './SpoolIcon';
@@ -245,6 +245,12 @@ export function InventorySpoolInfoCard({
           <div className="min-w-0">
             <p className="text-xs text-zinc-500 mb-1">{t('spoolbuddy.inventory.slicerFilament', 'Slicer Filament')}</p>
             <p className="text-sm text-zinc-300 whitespace-pre-wrap break-words">{slicerPreset}</p>
+            {spool.slicer_filament_source === 'filament' && (
+              <p className="flex items-center gap-1 text-xs text-zinc-500 mt-0.5">
+                <CornerDownRight className="w-3 h-3 shrink-0" />
+                {t('spoolbuddy.inventory.inheritedFromFilament', 'Inherited from filament')}
+              </p>
+            )}
           </div>
         )}
         {note && (

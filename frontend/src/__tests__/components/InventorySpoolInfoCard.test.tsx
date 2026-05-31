@@ -105,6 +105,24 @@ describe('InventorySpoolInfoCard', () => {
     expect(screen.queryByText(/unassign/i)).not.toBeInTheDocument();
   });
 
+  it('shows inherited-from-filament hint when slicer_filament_source is filament', () => {
+    render(
+      <InventorySpoolInfoCard
+        spool={{
+          ...mockSpool,
+          slicer_filament: 'GFSL05',
+          slicer_filament_name: 'Bambu PLA Basic @BBL',
+          slicer_filament_source: 'filament',
+        }}
+        liveScaleWeight={null}
+        onAssignToAms={vi.fn()}
+        isAssigned={false}
+      />,
+    );
+    expect(screen.getByText(/inherited from filament/i)).toBeInTheDocument();
+    expect(screen.getByText('Bambu PLA Basic @BBL')).toBeInTheDocument();
+  });
+
   it('calls onUnassignFromAms when Unassign button is clicked', () => {
     const onUnassign = vi.fn();
     render(

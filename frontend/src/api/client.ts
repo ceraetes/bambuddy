@@ -2592,6 +2592,10 @@ export interface InventorySpool {
   weight_used_baseline?: number;
   slicer_filament: string | null;
   slicer_filament_name: string | null;
+  // Where the slicer profile mapping was resolved: spool extra, parent filament
+  // extra, or filament.name for display only. The edit form uses this to show an
+  // inherited hint and avoid round-tripping a filament-level mapping onto the spool.
+  slicer_filament_source?: 'spool' | 'filament' | 'filament_name' | null;
   nozzle_temp_min: number | null;
   nozzle_temp_max: number | null;
   note: string | null;
