@@ -3469,6 +3469,8 @@ export default {
     filament: 'Filament profile',
     filamentSlot: 'Filament {{index}} ({{type}})',
     selectPreset: '— Select a preset —',
+    searchPresets: 'Search presets…',
+    noPresetsMatch: 'No presets match',
     loadingPresets: 'Loading presets…',
     analyzingPlateFilaments: 'Analyzing plate filaments…',
     analyzingPlateFilamentsHint: 'Running a preview slice to discover which AMS slots this plate uses. Cached after — re-opening is instant.',
@@ -3635,6 +3637,7 @@ export default {
     measuredWeightError: 'Measured weight must be between {{min}}g and {{max}}g.',
     slicerFilament: 'Slicer Filament',
     slicerFilamentName: 'Slicer Preset Name',
+    inheritedFromFilament: 'Inherited from filament',
     slicerPreset: 'Slicer Preset',
     searchPresets: 'Search filament presets...',
     selectedPreset: 'Selected',
@@ -5398,6 +5401,7 @@ export default {
       noResults: 'No matching spools',
       spools: 'spools',
       addSpool: 'Add Spool',
+      inheritedFromFilament: 'Inherited from filament',
     },
     settings: {
       // Tabs

@@ -9,6 +9,7 @@ import { useToast } from '../contexts/ToastContext';
 import type { SpoolFormData, PrinterWithCalibrations, ColorPreset } from './spool-form/types';
 import { defaultFormData, validateForm, SPOOLMAN_LINKED_FIELDS } from './spool-form/types';
 import { buildFilamentOptions, extractBrandsFromPresets, findPresetOption, loadRecentColors, parsePresetName, saveRecentColor } from './spool-form/utils';
+import { stripBblPrinterTag } from '../utils/slicerProfileResolve';
 import { MATERIALS } from './spool-form/constants';
 import { FilamentSection } from './spool-form/FilamentSection';
 import { ColorSection } from './spool-form/ColorSection';
@@ -324,7 +325,9 @@ export function SpoolFormModal({
           core_weight: spool.core_weight || 250,
           core_weight_catalog_id: spool.core_weight_catalog_id ?? null,
           weight_used: isCopying ? 0 : spool.weight_used || 0,
-          slicer_filament: spool.slicer_filament || '',
+          // When inherited from the parent Filament, leave blank so saving does not
+          // copy the mapping onto the spool (same guard as color_name_is_synthesized).
+          slicer_filament: spool.slicer_filament_source === 'filament' ? '' : (spool.slicer_filament || ''),
           note: spool.note || '',
           cost_per_kg: spool.cost_per_kg ?? null,
           category: spool.category || '',
@@ -332,7 +335,11 @@ export function SpoolFormModal({
           storage_location: spool.storage_location || '',
           spoolman_filament_id: null,
         });
-        setPresetInputValue(spool.slicer_filament_name || spool.slicer_filament || '');
+        setPresetInputValue(
+          spool.slicer_filament_source === 'filament'
+            ? ''
+            : (spool.slicer_filament_name || spool.slicer_filament || ''),
+        );
 
         // Load K-profiles for this spool
         if (spool.k_profiles && spool.k_profiles.length > 0) {
@@ -687,8 +694,9 @@ export function SpoolFormModal({
       return;
     }
 
-    // Find preset name from selected option
-    const presetName = selectedPresetOption?.displayName || presetInputValue || null;
+    const rawPresetName = selectedPresetOption?.displayName || presetInputValue || null;
+    const presetName =
+      rawPresetName && rawPresetName.includes('@BBL') ? stripBblPrinterTag(rawPresetName) || rawPresetName : rawPresetName;
 
     const data: Record<string, unknown> = {
       material: formData.material || null,
@@ -862,6 +870,11 @@ export function SpoolFormModal({
                   quantity={quantity}
                   onQuantityChange={setQuantity}
                   errors={errors}
+                  inheritedPresetName={
+                    spool?.slicer_filament_source === 'filament'
+                      ? spool.slicer_filament_name || spool.slicer_filament || null
+                      : null
+                  }
                 />
               </div>
 

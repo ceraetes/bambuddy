@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { SliceModal } from '../../components/SliceModal';
@@ -27,6 +27,14 @@ vi.mock('../../api/client', () => ({
     getLibraryFileFilamentRequirements: vi.fn(),
     getArchiveFilamentRequirements: vi.fn(),
     listSlicerBundles: vi.fn(),
+    getSlicerPrinterModels: vi.fn().mockResolvedValue({
+      'Bambu Lab X1 Carbon': 'X1C',
+      'Bambu Lab P1S': 'P1S',
+      'Bambu Lab A1 mini': 'A1 Mini',
+    }),
+    getSpoolmanSettings: vi.fn().mockResolvedValue({ spoolman_enabled: 'false', spoolman_url: '' }),
+    getSpools: vi.fn().mockResolvedValue([]),
+    getSpoolmanInventorySpools: vi.fn().mockResolvedValue([]),
     getSettings: vi.fn().mockResolvedValue({}),
     updateSettings: vi.fn().mockResolvedValue({}),
   },
@@ -42,7 +50,42 @@ const mockApi = api as unknown as {
   getLibraryFileFilamentRequirements: ReturnType<typeof vi.fn>;
   getArchiveFilamentRequirements: ReturnType<typeof vi.fn>;
   listSlicerBundles: ReturnType<typeof vi.fn>;
+  getSlicerPrinterModels: ReturnType<typeof vi.fn>;
+  getSpoolmanSettings: ReturnType<typeof vi.fn>;
+  getSpools: ReturnType<typeof vi.fn>;
+  getSpoolmanInventorySpools: ReturnType<typeof vi.fn>;
 };
+
+function nativeSelects(): HTMLSelectElement[] {
+  return screen.getAllByRole('combobox').filter((el) => el.tagName === 'SELECT') as HTMLSelectElement[];
+}
+
+function presetComboInputs(): HTMLInputElement[] {
+  return screen.getAllByRole('combobox').filter((el) => el.tagName === 'INPUT') as HTMLInputElement[];
+}
+
+async function selectPresetByName(
+  user: ReturnType<typeof userEvent.setup>,
+  comboIndex: number,
+  name: string | RegExp,
+) {
+  const input = presetComboInputs()[comboIndex];
+  await user.click(input);
+  await user.click(screen.getByRole('option', { name }));
+}
+
+/** fullThreeTier auto-pick lands on local (Imported) entries in the comboboxes. */
+async function waitForDefaultPresets() {
+  await waitFor(() => {
+    expect(screen.getByDisplayValue('Imported X1C 0.4')).toBeDefined();
+  });
+}
+
+async function waitForPresetDisplay(value: string) {
+  await waitFor(() => {
+    expect(screen.getByDisplayValue(value)).toBeDefined();
+  });
+}
 
 function makeUnified(overrides: Partial<UnifiedPresetsResponse> = {}): UnifiedPresetsResponse {
   return {
@@ -135,18 +178,17 @@ describe('SliceModal', () => {
 
     // SliceModal-specific tier priority: imported (local) wins over cloud
     // and standard so the user's curated picks come first.
+    await waitForDefaultPresets();
+    // 3 preset comboboxes (printer, process, filament) + 1 bed-type select.
     await waitFor(() => {
-      expect(screen.getByText('My Custom X1C')).toBeDefined();
+      const combos = presetComboInputs();
+      expect(combos).toHaveLength(3);
+      expect(combos[0].value).toBe('Imported X1C 0.4');
+      expect(combos[1].value).toBe('Imported 0.20mm');
+      expect(combos[2].value).toBe('Imported PLA Basic');
+      expect(nativeSelects()).toHaveLength(1);
+      expect(nativeSelects()[0].value).toBe('');
     });
-    // 4 selects: printer, process, bed-type (#1337), filament. bed-type sits
-    // between process and filament — it overrides curr_bed_type on the
-    // process preset so the related controls cluster — and defaults to "".
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    expect(selects).toHaveLength(4);
-    expect(selects[0].value).toBe('local:1');
-    expect(selects[1].value).toBe('local:2');
-    expect(selects[2].value).toBe('');
-    expect(selects[3].value).toBe('local:3');
 
     // Slice button is enabled because all three slots auto-defaulted and
     // the preview-slice query has resolved (mock returns immediately).
@@ -154,31 +196,22 @@ describe('SliceModal', () => {
     expect((sliceBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('renders Imported / Cloud / Standard sections via <optgroup>', async () => {
+  it('renders Imported / Cloud / Standard tier headers in the preset list', async () => {
+    const user = userEvent.setup();
     renderWithTracker({
       source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('Imported X1C 0.4')).toBeDefined());
+    await waitForDefaultPresets();
 
-    const printerSelect = screen.getAllByRole('combobox')[0];
-    const groups = printerSelect.querySelectorAll('optgroup');
-    expect(Array.from(groups).map((g) => g.label)).toEqual([
-      'Imported',
-      'Cloud',
-      'Standard',
-    ]);
-
-    // Each entry sits inside its own tier's group — pin the assignment so
-    // a future render-shape change can't quietly mix them. Order matches
-    // SLICE_MODAL_TIER_ORDER (local → cloud → standard).
-    const localGroup = groups[0];
-    expect(within(localGroup as HTMLElement).getByText('Imported X1C 0.4')).toBeDefined();
-    const cloudGroup = groups[1];
-    expect(within(cloudGroup as HTMLElement).getByText('My Custom X1C')).toBeDefined();
-    const standardGroup = groups[2];
-    expect(within(standardGroup as HTMLElement).getByText('Bambu Lab X1 Carbon 0.4 nozzle')).toBeDefined();
+    await user.click(presetComboInputs()[0]);
+    expect(screen.getByText('Imported')).toBeDefined();
+    expect(screen.getByText('Cloud')).toBeDefined();
+    expect(screen.getByText('Standard')).toBeDefined();
+    expect(screen.getByRole('option', { name: 'Imported X1C 0.4' })).toBeDefined();
+    expect(screen.getByRole('option', { name: 'My Custom X1C' })).toBeDefined();
+    expect(screen.getByRole('option', { name: 'Bambu Lab X1 Carbon 0.4 nozzle' })).toBeDefined();
   });
 
   it('falls back to local when cloud is empty (auto-pick respects priority)', async () => {
@@ -193,9 +226,8 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('Imported X1C 0.4')).toBeDefined());
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    expect(selects[0].value).toBe('local:1');
+    await waitForDefaultPresets();
+    expect(presetComboInputs()[0].value).toBe('Imported X1C 0.4');
   });
 
   it('falls back to standard when both cloud and local are empty', async () => {
@@ -207,9 +239,8 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('Bambu Lab X1 Carbon 0.4 nozzle')).toBeDefined());
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    expect(selects[0].value).toBe('standard:Bambu Lab X1 Carbon 0.4 nozzle');
+    await waitForPresetDisplay('Bambu Lab X1 Carbon 0.4 nozzle');
+    expect(presetComboInputs()[0].value).toBe('Bambu Lab X1 Carbon 0.4 nozzle');
   });
 
   it('sends source-aware refs (not legacy bare ints) on submit', async () => {
@@ -225,7 +256,7 @@ describe('SliceModal', () => {
       onClose,
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -257,17 +288,11 @@ describe('SliceModal', () => {
       onClose,
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
 
     const user = userEvent.setup();
-    // Order with the dropdown now sits between Process and Filament:
-    // printer (0), process (1), bed-type (2), filament (3+). Find the
-    // bed-type select by name rather than positional index so this stays
-    // green if the layout adds another control around it.
-    const bedSelect = screen.getAllByRole('combobox').find((el) =>
-      (el as HTMLSelectElement).options[0]?.textContent?.toLowerCase().includes('auto'),
-    ) as HTMLSelectElement;
-    expect(bedSelect).toBeDefined();
+    const bedSelect = nativeSelects()[0];
+    expect(bedSelect.options[0]?.textContent?.toLowerCase()).toContain('auto');
     await user.selectOptions(bedSelect, 'Textured PEI Plate');
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
@@ -292,7 +317,7 @@ describe('SliceModal', () => {
       onClose,
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -316,11 +341,10 @@ describe('SliceModal', () => {
       onClose,
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
 
     const user = userEvent.setup();
-    const selects = screen.getAllByRole('combobox');
-    await user.selectOptions(selects[0], 'standard:Bambu Lab X1 Carbon 0.4 nozzle');
+    await selectPresetByName(user, 0, 'Bambu Lab X1 Carbon 0.4 nozzle');
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
     await waitFor(() => {
@@ -346,7 +370,7 @@ describe('SliceModal', () => {
       onClose,
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -366,7 +390,7 @@ describe('SliceModal', () => {
       onClose,
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -430,7 +454,7 @@ describe('SliceModal', () => {
       source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
       onClose: vi.fn(),
     });
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
     // No status-role banner should be rendered on the happy path.
     expect(screen.queryByRole('status')).toBeNull();
   });
@@ -509,7 +533,7 @@ describe('SliceModal', () => {
     });
 
     // Should jump straight to the profile dropdowns.
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
   });
 
   it('passes the picked plate to the slice request', async () => {
@@ -531,7 +555,7 @@ describe('SliceModal', () => {
     await user.click(plate2Button);
 
     // Step 2: profile dropdowns are now visible.
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
 
     // Step 3: submit and verify the plate index made it into the body.
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -560,7 +584,7 @@ describe('SliceModal', () => {
     const plate1Button = await screen.findByRole('button', { name: /Plate 1.*Cube/ });
     await user.click(plate1Button);
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
 
     // The "Slice all plates" checkbox only appears for multi-plate sources.
     const toggle = await screen.findByRole('checkbox', { name: /Slice all 2 plates/i });
@@ -601,7 +625,7 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
     expect(screen.queryByRole('checkbox', { name: /Slice all/i })).toBeNull();
   });
 
@@ -649,7 +673,7 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -727,9 +751,10 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
-    // 1 printer + 1 process + 2 filament + 1 bed-type (#1337) = 5 dropdowns.
-    expect(screen.getAllByRole('combobox')).toHaveLength(5);
+    await waitForPresetDisplay('X1C');
+    // 4 preset comboboxes + 1 bed-type select.
+    expect(presetComboInputs()).toHaveLength(4);
+    expect(nativeSelects()).toHaveLength(1);
   });
 
   it('pre-picks each filament slot by matching colour metadata', async () => {
@@ -747,7 +772,7 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
+    await waitForPresetDisplay('X1C');
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -777,7 +802,7 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+    await waitForDefaultPresets();
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -807,15 +832,13 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
+    await waitForPresetDisplay('X1C');
 
     const user = userEvent.setup();
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    // Order: 0 printer, 1 process, 2 bed-type, 3 filament-1, 4 filament-2
-    // (#1337). Auto-picks land on printer/process/filaments; bed-type
-    // defaults to "". Swap filament-1 (index 3) from the auto-picked black
-    // to white.
-    await user.selectOptions(selects[3], 'cloud:F-WHITE');
+    const filamentInput = presetComboInputs()[2];
+    // Swap filament slot 1 from auto-picked black to white via the combobox.
+    await user.click(filamentInput);
+    await user.click(screen.getByRole('option', { name: 'Cloud PLA White' }));
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
     await waitFor(() => {
@@ -863,9 +886,7 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() =>
-      expect(screen.getByText('Bambu Lab X1 Carbon 0.4 nozzle')).toBeDefined(),
-    );
+    await waitForPresetDisplay('Bambu Lab X1 Carbon 0.4 nozzle');
 
     // No banner, no alert — re-slicing across printers is just a normal slice now.
     expect(screen.queryByRole('alert')).toBeNull();
@@ -928,16 +949,16 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
+    await waitForPresetDisplay('X1C');
 
-    // Both filament rows render — 1 printer + 1 process + 1 bed-type +
-    // 2 filament (#1337) = 5. bed-type sits at index 2, filament slots
-    // follow at 3 and 4.
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    expect(selects).toHaveLength(5);
+    // 4 preset comboboxes (printer, process, 2× filament) + bed-type select.
+    expect(presetComboInputs()).toHaveLength(4);
+    expect(nativeSelects()).toHaveLength(1);
+    const filamentInputs = presetComboInputs().slice(2);
+    expect(filamentInputs).toHaveLength(2);
     // Slot 1 (used) is editable, slot 2 (not used) is disabled.
-    expect(selects[3].disabled).toBe(false);
-    expect(selects[4].disabled).toBe(true);
+    expect(filamentInputs[0].disabled).toBe(false);
+    expect(filamentInputs[1].disabled).toBe(true);
     // The disabled row's label calls out why it's disabled.
     expect(screen.getByText(/not used by this plate/i)).toBeDefined();
   });
@@ -997,7 +1018,7 @@ describe('SliceModal', () => {
       onClose: vi.fn(),
     });
 
-    await waitFor(() => expect(screen.getByText('X1C')).toBeDefined());
+    await waitForPresetDisplay('X1C');
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Slice$/ }));
@@ -1041,7 +1062,7 @@ describe('SliceModal', () => {
         source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
         onClose: vi.fn(),
       });
-      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      await waitForDefaultPresets();
       expect(screen.queryByText(/slicer bundle/i)).toBeNull();
     });
 
@@ -1067,7 +1088,7 @@ describe('SliceModal', () => {
         source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
         onClose: vi.fn(),
       });
-      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      await waitForDefaultPresets();
 
       const user = userEvent.setup();
       const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
@@ -1110,7 +1131,7 @@ describe('SliceModal', () => {
         source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
         onClose: vi.fn(),
       });
-      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      await waitForDefaultPresets();
 
       const user = userEvent.setup();
       const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
@@ -1151,7 +1172,7 @@ describe('SliceModal', () => {
         source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
         onClose: vi.fn(),
       });
-      await waitFor(() => expect(screen.getByText('My Custom X1C')).toBeDefined());
+      await waitForDefaultPresets();
 
       const user = userEvent.setup();
       const bundleSelect = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
@@ -1160,15 +1181,13 @@ describe('SliceModal', () => {
         expect(screen.getByText('# 0.20mm Standard @BBL H2D')).toBeDefined(),
       );
 
-      // Flip back to None.
+      // Flip back to None — triplet returns with local-tier auto-pick.
       await user.selectOptions(bundleSelect, '');
       await waitFor(() => {
-        const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-        // After de-selecting bundle, the printer dropdown's first option
-        // should be one of the original cloud/local/standard names.
-        const printerOptions = Array.from(selects[1].options).map((o) => o.textContent);
-        expect(printerOptions).toContain('My Custom X1C');
+        expect(presetComboInputs()[0].value).toBe('Imported X1C 0.4');
       });
+      await user.click(presetComboInputs()[0]);
+      expect(screen.getByRole('option', { name: 'My Custom X1C' })).toBeDefined();
 
       await user.click(screen.getByRole('button', { name: /^Slice$/ }));
       await waitFor(() => {
@@ -1176,6 +1195,104 @@ describe('SliceModal', () => {
         expect(body.bundle).toBeUndefined();
         expect(body.printer_preset).toBeDefined();
       });
+    });
+  });
+
+  it('auto-selects filament from Spoolman profile when it matches a Tier-1 preset', async () => {
+    mockApi.getSpoolmanSettings.mockResolvedValue({
+      spoolman_enabled: 'true',
+      spoolman_url: 'http://spoolman.local',
+    });
+    mockApi.getSpoolmanInventorySpools.mockResolvedValue([
+      {
+        id: 99,
+        material: 'PLA',
+        subtype: 'Basic',
+        color_name: 'Black',
+        rgba: '000000FF',
+        slicer_filament: 'GFSL05',
+        slicer_filament_name: 'Bambu PLA Basic @BBL',
+        slicer_filament_source: 'spool',
+        label_weight: 1000,
+        core_weight: 250,
+        weight_used: 0,
+        archived_at: null,
+      },
+    ] as never);
+    mockApi.getSlicerPresets.mockResolvedValue(
+      makeUnified({
+        cloud: {
+          printer: [{ id: 'P-P1S', name: 'Bambu Lab P1S 0.4 nozzle', source: 'cloud' }],
+          process: [{ id: 'PR1', name: '0.20mm Standard @BBL P1S', source: 'cloud' }],
+          filament: [
+            {
+              id: 'F-P1S',
+              name: 'Bambu PLA Basic @BBL P1S',
+              source: 'cloud',
+              filament_type: 'PLA',
+              filament_colour: '#000000',
+            },
+            {
+              id: 'F-X1C',
+              name: 'Bambu PLA Basic @BBL X1C',
+              source: 'cloud',
+              filament_type: 'PLA',
+              filament_colour: '#000000',
+            },
+          ],
+        },
+        local: { printer: [], process: [], filament: [] },
+        standard: { printer: [], process: [], filament: [] },
+      }),
+    );
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+      file_id: 100,
+      filename: 'Cube.stl',
+      plate_id: 1,
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#000000', used_grams: 10, used_meters: 3 }],
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Bambu PLA Basic @BBL P1S')).toBeDefined();
+    });
+    expect(presetComboInputs()[0].value).toBe('Bambu Lab P1S 0.4 nozzle');
+    expect(presetComboInputs()[2].value).toBe('Bambu PLA Basic @BBL P1S');
+  });
+
+  it('filters filament presets in the combobox as the user types', async () => {
+    mockApi.getSlicerPresets.mockResolvedValue(
+      makeUnified({
+        cloud: {
+          printer: [{ id: 'P1', name: 'X1C', source: 'cloud' }],
+          process: [{ id: 'PR1', name: '0.20mm', source: 'cloud' }],
+          filament: [
+            { id: 'F-BLACK', name: 'Bambu PLA Basic Black', source: 'cloud', filament_type: 'PLA' },
+            { id: 'F-PETG', name: 'Bambu PETG Basic', source: 'cloud', filament_type: 'PETG' },
+          ],
+        },
+      }),
+    );
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    await waitForPresetDisplay('X1C');
+
+    const user = userEvent.setup();
+    const input = presetComboInputs()[2];
+    await user.click(input);
+    await user.type(input, 'PETG');
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Bambu PETG Basic' })).toBeDefined();
+      expect(screen.queryByRole('option', { name: 'Bambu PLA Basic Black' })).toBeNull();
     });
   });
 });
