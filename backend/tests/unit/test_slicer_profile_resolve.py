@@ -59,10 +59,7 @@ class TestStripBblPrinterTag:
 class TestAppendBblPrinterTag:
     def test_append_to_base_a1_mini(self):
         # The user's headline case: keep @BBL, append the A1 mini token.
-        assert (
-            append_bbl_printer_tag("Bambu PLA Basic @BBL", "Bambu Lab A1 mini")
-            == "Bambu PLA Basic @BBL A1 Mini"
-        )
+        assert append_bbl_printer_tag("Bambu PLA Basic @BBL", "Bambu Lab A1 mini") == "Bambu PLA Basic @BBL A1 Mini"
 
     def test_append_to_base_p1s(self):
         assert append_bbl_printer_tag("Bambu PLA Basic @BBL", "P1S") == "Bambu PLA Basic @BBL P1S"
@@ -91,9 +88,10 @@ class TestAppendBblPrinterTag:
 
 class TestResolveProfileForPrinter:
     def test_resolves_each_candidate(self):
-        assert resolve_profile_for_printer(
-            "Bambu PLA Basic @BBL, Generic PLA @BBL", "P1S"
-        ) == ["Bambu PLA Basic @BBL P1S", "Generic PLA @BBL P1S"]
+        assert resolve_profile_for_printer("Bambu PLA Basic @BBL, Generic PLA @BBL", "P1S") == [
+            "Bambu PLA Basic @BBL P1S",
+            "Generic PLA @BBL P1S",
+        ]
 
     def test_mixed_candidates(self):
         # A comma list mixing a base name and a bare id keeps the id intact.

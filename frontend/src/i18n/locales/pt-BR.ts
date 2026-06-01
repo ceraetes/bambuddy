@@ -3454,6 +3454,8 @@ export default {
     filament: 'Perfil de filamento',
     filamentSlot: 'Filamento {{index}} ({{type}})',
     selectPreset: '— Selecione uma predefinição —',
+    searchPresets: 'Pesquisar predefinições…',
+    noPresetsMatch: 'Nenhuma predefinição corresponde',
     loadingPresets: 'Carregando predefinições…',
     analyzingPlateFilaments: 'Analisando filamentos da mesa…',
     analyzingPlateFilamentsHint: 'Executando uma fatia de pré-visualização para descobrir quais slots AMS esta mesa usa. Cacheado depois — reabrir é instantâneo.',
@@ -3620,6 +3622,7 @@ export default {
     measuredWeightError: 'O peso medido deve estar entre {{min}}g e {{max}}g.',
     slicerFilament: 'Filamento do Fatiador',
     slicerFilamentName: 'Nome do Predefinido do Fatiador',
+    inheritedFromFilament: 'Herdado do filamento',
     slicerPreset: 'Predefinido do Fatiador',
     searchPresets: 'Pesquisar predefinições de filamento...',
     selectedPreset: 'Selecionado',
@@ -5374,6 +5377,7 @@ export default {
       noResults: 'Nenhum carretel correspondente',
       spools: 'carretéis',
       addSpool: 'Adicionar carretel',
+      inheritedFromFilament: 'Herdado do filamento',
     },
     settings: {
       // Tabs

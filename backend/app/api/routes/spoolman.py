@@ -141,17 +141,8 @@ async def connect_spoolman(
                 detail=f"Could not connect to Spoolman at {url}",
             )
 
-        # Ensure the 'tag' extra field exists for RFID/UUID storage
-        field_ok = await client.ensure_tag_extra_field()
-        if not field_ok:
-            logger.error("Spoolman tag extra field registration failed — NFC tag links may not persist")
-        # Register slicer-preset extra fields (Spoolman rejects unknown extra keys).
-        for field_name in ("bambu_slicer_filament", "bambu_slicer_filament_name"):
-            if not await client.ensure_extra_field(field_name):
-                logger.warning(
-                    "Spoolman extra field %r registration failed — spool slicer-preset edits will return 502",
-                    field_name,
-                )
+        # Register tag + spool/filament extra fields (Spoolman rejects unknown extra keys).
+        await client.ensure_bambuddy_extra_fields()
 
         return {"success": True, "message": f"Connected to Spoolman at {url}"}
     except ValueError as exc:

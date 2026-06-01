@@ -3466,6 +3466,8 @@ export default {
     filament: 'フィラメントプロファイル',
     filamentSlot: 'フィラメント {{index}}（{{type}}）',
     selectPreset: '— プリセットを選択 —',
+    searchPresets: 'プリセットを検索…',
+    noPresetsMatch: '一致するプリセットがありません',
     loadingPresets: 'プリセットを読み込み中…',
     analyzingPlateFilaments: 'プレートのフィラメントを分析中…',
     analyzingPlateFilamentsHint: 'このプレートが使用するAMSスロットを検出するためにプレビュースライスを実行中。キャッシュ後は再オープンが即座になります。',
@@ -3632,6 +3634,7 @@ export default {
     measuredWeightError: '計測重量は{{min}}gから{{max}}gの間で入力してください。',
     slicerFilament: 'スライサーフィラメント',
     slicerFilamentName: 'スライサープリセット名',
+    inheritedFromFilament: 'フィラメントから継承',
     slicerPreset: 'スライサープリセット',
     searchPresets: 'フィラメントプリセットを検索...',
     selectedPreset: '選択済み',
@@ -5386,6 +5389,7 @@ export default {
       noResults: '一致するスプールがありません',
       spools: 'スプール',
       addSpool: 'スプール追加',
+      inheritedFromFilament: 'フィラメントから継承',
     },
     settings: {
       // Tabs

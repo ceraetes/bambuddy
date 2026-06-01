@@ -900,3 +900,63 @@ class TestFindOrCreateFilament:
 
         mock_create.assert_called_once()
         assert mock_create.call_args.kwargs["density"] == 1.31
+
+
+class TestEnsureExtraField:
+    """Tests for SpoolmanClient.ensure_extra_field entity types."""
+
+    @pytest.fixture
+    def client(self):
+        return SpoolmanClient("http://localhost:7912")
+
+    @pytest.mark.asyncio
+    async def test_registers_filament_field_when_missing(self, client):
+        mock_http = AsyncMock()
+        get_resp = Mock(status_code=404)
+        post_resp = Mock(status_code=201)
+        mock_http.get = AsyncMock(return_value=get_resp)
+        mock_http.post = AsyncMock(return_value=post_resp)
+
+        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http)):
+            ok = await client.ensure_extra_field(
+                "bambu_slicer_filament",
+                entity_type="filament",
+            )
+
+        assert ok is True
+        mock_http.get.assert_awaited_once_with("http://localhost:7912/api/v1/field/filament/bambu_slicer_filament")
+        mock_http.post.assert_awaited_once()
+        assert mock_http.post.call_args.args[0].endswith("/field/filament/bambu_slicer_filament")
+
+    @pytest.mark.asyncio
+    async def test_spool_field_already_exists_skips_post(self, client):
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(return_value=Mock(status_code=200))
+        mock_http.post = AsyncMock()
+
+        with patch.object(client, "_get_client", AsyncMock(return_value=mock_http)):
+            ok = await client.ensure_extra_field("bambu_color_name", entity_type="spool")
+
+        assert ok is True
+        mock_http.post.assert_not_awaited()
+
+
+class TestEnsureBambuddyExtraFields:
+    @pytest.fixture
+    def client(self):
+        return SpoolmanClient("http://localhost:7912")
+
+    @pytest.mark.asyncio
+    async def test_registers_spool_and_filament_slicer_keys(self, client):
+        with (
+            patch.object(client, "ensure_tag_extra_field", AsyncMock(return_value=True)),
+            patch.object(client, "ensure_extra_field", AsyncMock(return_value=True)) as mock_ensure,
+        ):
+            await client.ensure_bambuddy_extra_fields()
+
+        calls = [(c.args[0], c.kwargs.get("entity_type", "spool")) for c in mock_ensure.call_args_list]
+        assert ("bambu_slicer_filament", "spool") in calls
+        assert ("bambu_slicer_filament_name", "spool") in calls
+        assert ("bambu_color_name", "spool") in calls
+        assert ("bambu_slicer_filament", "filament") in calls
+        assert ("bambu_slicer_filament_name", "filament") in calls

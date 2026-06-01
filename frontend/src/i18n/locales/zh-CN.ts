@@ -3454,6 +3454,8 @@ export default {
     filament: '耗材配置',
     filamentSlot: '耗材 {{index}}（{{type}}）',
     selectPreset: '— 选择预设 —',
+    searchPresets: '搜索预设…',
+    noPresetsMatch: '没有匹配的预设',
     loadingPresets: '加载预设中…',
     analyzingPlateFilaments: '分析打印板耗材中…',
     analyzingPlateFilamentsHint: '正在运行预览切片以发现此打印板使用的 AMS 插槽。之后会缓存 — 重新打开是即时的。',
@@ -3620,6 +3622,7 @@ export default {
     measuredWeightError: '称量重量必须在 {{min}}g 到 {{max}}g 之间。',
     slicerFilament: '切片耗材',
     slicerFilamentName: '切片预设名称',
+    inheritedFromFilament: '继承自耗材类型',
     slicerPreset: '切片预设',
     searchPresets: '搜索耗材预设...',
     selectedPreset: '已选择',
@@ -5373,6 +5376,7 @@ export default {
       noResults: '没有匹配的耗材',
       spools: '个耗材',
       addSpool: '添加耗材',
+      inheritedFromFilament: '继承自耗材类型',
     },
     settings: {
       // Tabs
