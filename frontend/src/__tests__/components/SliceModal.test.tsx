@@ -1272,6 +1272,39 @@ describe('SliceModal', () => {
     expect(presetComboInputs()[2].value).toBe('Bambu PLA Basic @BBL P1S');
   });
 
+  it('fuzzy-filters filament presets in the combobox as the user types', async () => {
+    mockApi.getSlicerPresets.mockResolvedValue(
+      makeUnified({
+        cloud: {
+          printer: [{ id: 'P1', name: 'X1C', source: 'cloud' }],
+          process: [{ id: 'PR1', name: '0.20mm', source: 'cloud' }],
+          filament: [
+            { id: 'F-BLACK', name: 'Bambu PLA Basic Black', source: 'cloud', filament_type: 'PLA' },
+            { id: 'F-PETG', name: 'Bambu PETG Basic', source: 'cloud', filament_type: 'PETG' },
+          ],
+        },
+      }),
+    );
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.stl' },
+      onClose: vi.fn(),
+    });
+
+    await waitForPresetDisplay('X1C');
+
+    const user = userEvent.setup();
+    const input = presetComboInputs()[2];
+    await user.click(input);
+    // "plabk" fuzzy-matches "Bambu PLA Basic Black" but not "Bambu PETG Basic"
+    await user.type(input, 'plabk');
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Bambu PLA Basic Black' })).toBeDefined();
+      expect(screen.queryByRole('option', { name: 'Bambu PETG Basic' })).toBeNull();
+    });
+  });
+
   it('filters filament presets in the combobox as the user types', async () => {
     mockApi.getSlicerPresets.mockResolvedValue(
       makeUnified({
