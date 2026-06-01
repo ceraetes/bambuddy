@@ -3513,6 +3513,8 @@ export default {
     filament: 'Profilo filamento',
     filamentSlot: 'Filamento {{index}} ({{type}})',
     selectPreset: '— Seleziona un preset —',
+    searchPresets: 'Cerca preset…',
+    noPresetsMatch: 'Nessun preset corrisponde',
     loadingPresets: 'Caricamento preset…',
     analyzingPlateFilaments: 'Analisi filamenti del piano…',
     analyzingPlateFilamentsHint: 'Slicing di anteprima per scoprire quali slot AMS usa questo piano. In cache dopo — la riapertura è istantanea.',
@@ -3687,6 +3689,7 @@ export default {
     measuredWeightError: 'Il peso misurato deve essere compreso tra {{min}}g e {{max}}g.',
     slicerFilament: 'Filamento Slicer',
     slicerFilamentName: 'Nome Preset Slicer',
+    inheritedFromFilament: 'Ereditato dal filamento',
     slicerPreset: 'Preset Slicer',
     searchPresets: 'Cerca preset filamento...',
     selectedPreset: 'Selezionato',
@@ -5441,6 +5444,7 @@ export default {
       noResults: 'Nessuna bobina corrispondente',
       spools: 'bobine',
       addSpool: 'Aggiungi bobina',
+      inheritedFromFilament: 'Ereditato dal filamento',
     },
     settings: {
       // Tabs

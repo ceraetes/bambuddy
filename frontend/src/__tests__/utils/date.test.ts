@@ -299,7 +299,8 @@ describe('formatTimeOnly', () => {
     const result = formatTimeOnly(date, '12h');
     // Locale-agnostic: separator is "." in en_DK, " " (NBSP) in some, ":" elsewhere.
     expect(result).toMatch(/\b0?2\D+30\b/);
-    expect(result.toUpperCase()).toContain('PM');
+    // en_US: "PM"; en_DK and others: "P.M." with optional spaces
+    expect(result.toUpperCase()).toMatch(/\bP\.?\s*M\.?\b/);
   });
 
   it('formats time with 24h format', () => {

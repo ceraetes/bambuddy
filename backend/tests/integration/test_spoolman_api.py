@@ -41,6 +41,7 @@ class TestSpoolmanAPI:
         mock_client.health_check = AsyncMock(return_value=True)
         mock_client.ensure_tag_extra_field = AsyncMock(return_value=True)
         mock_client.ensure_extra_field = AsyncMock(return_value=True)
+        mock_client.ensure_bambuddy_extra_fields = AsyncMock()
         mock_client.get_spools = AsyncMock(return_value=[])
         mock_client.get_filaments = AsyncMock(return_value=[])
         mock_client.create_spool = AsyncMock(return_value={"id": 1})
@@ -137,6 +138,7 @@ class TestSpoolmanAPI:
         data = response.json()
         assert data["success"] is True
         assert "connected" in data["message"].lower()
+        mock_spoolman_client.ensure_bambuddy_extra_fields.assert_awaited_once()
 
     @pytest.mark.asyncio
     @pytest.mark.integration

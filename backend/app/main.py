@@ -5229,21 +5229,7 @@ async def lifespan(app: FastAPI):
                 client = await init_spoolman_client(spoolman_url)
                 if await client.health_check():
                     logging.info("Auto-connected to Spoolman at %s", spoolman_url)
-                    # Ensure the 'tag' extra field exists for RFID/UUID storage
-                    field_ok = await client.ensure_tag_extra_field()
-                    if not field_ok:
-                        logging.error("Spoolman tag extra field registration failed — NFC tag links may not persist")
-                    # Register the BambuStudio slicer-preset fields used by the
-                    # spool-edit / assign flow. Spoolman rejects PATCHes with
-                    # unknown extra keys, so these must exist before any update
-                    # that touches them.
-                    for field_name in ("bambu_slicer_filament", "bambu_slicer_filament_name"):
-                        if not await client.ensure_extra_field(field_name):
-                            logging.warning(
-                                "Spoolman extra field %r registration failed — "
-                                "spool slicer-preset edits will return 502",
-                                field_name,
-                            )
+                    await client.ensure_bambuddy_extra_fields()
                 else:
                     logging.warning("Spoolman at %s is not reachable", spoolman_url)
             except Exception as e:
