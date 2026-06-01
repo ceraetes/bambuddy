@@ -150,6 +150,60 @@ function normalizeModelFragment(s: string): string {
   return s.replace(/\s+/g, '').toLowerCase();
 }
 
+// Bambu Studio does not ship P1-series-specific process presets; P1S/P1P reuse
+// the X1 Carbon process library. Treat these short codes as one platform for
+// process matching only (filament presets remain printer-specific).
+const PROCESS_PROFILE_PLATFORM_CODES = new Set(['X1C', 'P1S', 'P1P']);
+
+function modelFragmentToShortCode(
+  modelFragment: string,
+  bambuModelByShortCode: Record<string, string>,
+): string | null {
+  const norm = normalizeModelFragment(modelFragment);
+  for (const [code, mappedFragment] of Object.entries(bambuModelByShortCode)) {
+    if (normalizeModelFragment(mappedFragment) === norm) return code;
+    if (normalizeModelFragment(code) === norm) return code;
+  }
+  return null;
+}
+
+/** True when two model fragments share a process-preset platform (X1C ≡ P1S ≡ P1P). */
+function processProfileModelsCompatible(
+  presetModelFragment: string,
+  selectedModelFragment: string,
+  bambuModelByShortCode: Record<string, string>,
+): boolean {
+  if (normalizeModelFragment(presetModelFragment) === normalizeModelFragment(selectedModelFragment)) {
+    return true;
+  }
+  const presetCode =
+    modelFragmentToShortCode(presetModelFragment, bambuModelByShortCode) ??
+    modelFragmentToShortCode(presetModelFragment.replace(/\s+/g, ''), bambuModelByShortCode);
+  const selectedCode = modelFragmentToShortCode(selectedModelFragment, bambuModelByShortCode);
+  if (!presetCode || !selectedCode) return false;
+  if (presetCode === selectedCode) return true;
+  return (
+    PROCESS_PROFILE_PLATFORM_CODES.has(presetCode) &&
+    PROCESS_PROFILE_PLATFORM_CODES.has(selectedCode)
+  );
+}
+
+function processPrinterPresetNamesCompatible(
+  compatiblePrinter: string,
+  selectedPrinterName: string,
+  bambuModelByShortCode: Record<string, string>,
+): boolean {
+  if (compatiblePrinter === selectedPrinterName) return true;
+  const compatParts = extractPrinterPresetModel(compatiblePrinter);
+  const selectedParts = extractPrinterPresetModel(selectedPrinterName);
+  if (!compatParts || !selectedParts) return false;
+  return processProfileModelsCompatible(
+    compatParts.model,
+    selectedParts.model,
+    bambuModelByShortCode,
+  );
+}
+
 // Bambu Studio's naming convention for bundled presets: the 0.4 nozzle is
 // the default and its variants drop the nozzle suffix; 0.2 / 0.6 / 0.8
 // carry an explicit "<size> nozzle" segment. So a process with no suffix
@@ -203,6 +257,7 @@ function classifyByBambuName(
   presetName: string,
   selectedPrinterName: string,
   bambuModelByShortCode: Record<string, string>,
+  slot: 'process' | 'filament',
 ): PrinterCompatibility {
   const parsed = extractBblToken(presetName);
   if (!parsed) return 'unknown';
@@ -216,14 +271,15 @@ function classifyByBambuName(
   const inferredModel = bambuModelByShortCode[parsed.token] ?? parsed.token;
   const selectedParts = extractPrinterPresetModel(selectedPrinterName);
   if (!selectedParts) return 'unknown';
+  const modelsAlign =
+    slot === 'process'
+      ? processProfileModelsCompatible(inferredModel, selectedParts.model, bambuModelByShortCode)
+      : normalizeModelFragment(selectedParts.model) === normalizeModelFragment(inferredModel);
   // The raw inferred model and the printer-preset fragment may differ only by
   // the Bambu short-code rename (e.g. preset token "A1M" vs printer "A1 Mini").
   // ``matchesPrinterModelSuffix`` consults the alias table before declaring a
   // mismatch — see #1649.
-  if (
-    normalizeModelFragment(selectedParts.model) !== normalizeModelFragment(inferredModel)
-    && !matchesPrinterModelSuffix(parsed.token, selectedParts.model)
-  ) {
+  if (!modelsAlign && !matchesPrinterModelSuffix(parsed.token, selectedParts.model)) {
     return 'mismatch';
   }
   // Nozzle compare — only when we have a usable size from the printer
@@ -257,17 +313,46 @@ export function presetCompatibility(
   // authoritative when set.
   const compat = preset.compatible_printers;
   if (compat && compat.length > 0) {
+    if (slot === 'process') {
+      const anyMatch = compat.some((printer) =>
+        processPrinterPresetNamesCompatible(
+          printer,
+          selectedPrinterName,
+          index.bambuModelByShortCode,
+        ),
+      );
+      return anyMatch ? 'match' : 'mismatch';
+    }
     return compat.includes(selectedPrinterName) ? 'match' : 'mismatch';
   }
   // (2) Consult the uploaded Slicer Bundles.
   const printers = index[slot].get(normalizePresetName(preset.name));
   if (printers && printers.size > 0) {
+    if (slot === 'process') {
+      for (const printer of printers) {
+        if (
+          processPrinterPresetNamesCompatible(
+            printer,
+            selectedPrinterName,
+            index.bambuModelByShortCode,
+          )
+        ) {
+          return 'match';
+        }
+      }
+      return 'mismatch';
+    }
     return printers.has(selectedPrinterName) ? 'match' : 'mismatch';
   }
   // (3) BambuStudio's `@BBL <model>` name convention — covers cloud /
   // standard presets for users who haven't uploaded bundles for every
   // printer their cloud catalogue includes.
-  return classifyByBambuName(preset.name, selectedPrinterName, index.bambuModelByShortCode);
+  return classifyByBambuName(
+    preset.name,
+    selectedPrinterName,
+    index.bambuModelByShortCode,
+    slot,
+  );
 }
 
 const PRINTER_TIER_RANK: Record<PrinterCompatibility, number> = {

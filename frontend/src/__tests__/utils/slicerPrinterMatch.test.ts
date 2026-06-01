@@ -223,7 +223,9 @@ describe('presetCompatibility — @BBL name fallback (no bundles)', () => {
   it.each<[string, string, 'match' | 'mismatch']>([
     // @BBL X1C → "X1 Carbon" (the case the old hardcoded list got right)
     ['0.20mm Standard @BBL X1C', X1C, 'match'],
-    ['0.20mm Standard @BBL X1C', 'Bambu Lab P1S 0.4 nozzle', 'mismatch'],
+    // P1S/P1P reuse X1C process presets in Bambu Studio (no P1S-specific set).
+    ['0.20mm Standard @BBL X1C', 'Bambu Lab P1S 0.4 nozzle', 'match'],
+    ['0.20mm Standard @BBL X1C', 'Bambu Lab P1P 0.4 nozzle', 'match'],
     // @BBL X1 must NOT match X1 Carbon (X1 and X1C are physically different printers)
     ['0.20mm Standard @BBL X1', 'Bambu Lab X1 0.4 nozzle', 'match'],
     ['0.20mm Standard @BBL X1', X1C, 'mismatch'],
@@ -245,6 +247,28 @@ describe('presetCompatibility — @BBL name fallback (no bundles)', () => {
     ['0.20mm Standard @BBL H2S', 'Bambu Lab H2S 0.4 nozzle', 'match'],
   ])('classifies %s against %s as %s', (presetName, printerName, expected) => {
     expect(presetCompatibility({ name: presetName }, 'process', printerName, idx)).toBe(expected);
+  });
+
+  it('does not apply X1C/P1 platform equivalence to filament presets', () => {
+    expect(
+      presetCompatibility(
+        { name: 'Bambu PLA Basic @BBL X1C' },
+        'filament',
+        'Bambu Lab P1S 0.4 nozzle',
+        idx,
+      ),
+    ).toBe('mismatch');
+  });
+
+  it('treats compatible_printers listing X1C as match when P1S is selected (process only)', () => {
+    expect(
+      presetCompatibility(
+        { name: '0.20mm Standard', compatible_printers: [X1C] },
+        'process',
+        'Bambu Lab P1S 0.4 nozzle',
+        idx,
+      ),
+    ).toBe('match');
   });
 
   it('handles a trailing nozzle-size suffix on the @BBL tag', () => {
