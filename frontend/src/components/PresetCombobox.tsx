@@ -9,7 +9,8 @@ import type {
   UnifiedPresetsBySlot,
   UnifiedPresetsResponse,
 } from '../api/client';
-import { highlightMatch } from '../utils/highlightMatch';
+import { fuzzyMatchesHaystack } from '../utils/fuzzyMatch';
+import { highlightFuzzyMatch } from '../utils/highlightMatch';
 import {
   EMPTY_COMPATIBILITY_INDEX,
   sortPresetsByPrinterTier,
@@ -62,8 +63,7 @@ function presetSearchHaystack(p: UnifiedPreset, slotSpool?: InventorySpool | nul
 }
 
 function matchesQuery(p: UnifiedPreset, query: string, slotSpool?: InventorySpool | null): boolean {
-  if (!query.trim()) return true;
-  return presetSearchHaystack(p, slotSpool).includes(query.trim().toLowerCase());
+  return fuzzyMatchesHaystack(presetSearchHaystack(p, slotSpool), query);
 }
 
 export function PresetCombobox({
@@ -205,6 +205,7 @@ export function PresetCombobox({
                         key={`${p.source}:${p.id}`}
                         type="button"
                         role="option"
+                        aria-label={p.name}
                         aria-selected={selected}
                         className={`w-full px-3 py-2 text-left text-sm hover:bg-bambu-dark-tertiary truncate ${
                           selected ? 'bg-bambu-green/10 text-bambu-green' : 'text-white'
@@ -212,7 +213,7 @@ export function PresetCombobox({
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => handleSelect(p)}
                       >
-                        {highlightMatch(p.name, query)}
+                        {highlightFuzzyMatch(p.name, query)}
                       </button>
                     );
                   })}
