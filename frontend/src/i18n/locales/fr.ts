@@ -3520,6 +3520,8 @@ export default {
     filament: 'Profil de filament',
     filamentSlot: 'Filament {{index}} – {{type}}',
     selectPreset: '— Sélectionner un préréglage —',
+    searchPresets: 'Chercher les préréglages…',
+    noPresetsMatch: 'Aucun préréglage correspondant',
     loadingPresets: 'Chargement des préréglages…',
     analyzingPlateFilaments: 'Analyse des filaments de la plaque…',
     analyzingPlateFilamentsHint: 'Exécution d\'un découpage d\'aperçu pour identifier les emplacements AMS utilisés. Mis en cache après — la réouverture est instantanée.',
@@ -3694,6 +3696,7 @@ export default {
     measuredWeightError: 'Le poids mesuré doit être entre {{min}}g et {{max}}g.',
     slicerFilament: 'Filament Slicer',
     slicerFilamentName: 'Nom du Preset Slicer',
+    inheritedFromFilament: 'Hérité du filament',
     slicerPreset: 'Preset Slicer',
     searchPresets: 'Chercher presets...',
     selectedPreset: 'Sélectionné',
@@ -5453,6 +5456,7 @@ export default {
       noResults: 'Aucune bobine correspondante',
       spools: 'bobines',
       addSpool: 'Ajouter une bobine',
+      inheritedFromFilament: 'Hérité du filament',
     },
     settings: {
       // Tabs

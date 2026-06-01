@@ -13,6 +13,23 @@ logger = logging.getLogger(__name__)
 
 BAMBU_RFID_TAG_LENGTH = 32
 
+SpoolmanEntityType = Literal["spool", "filament"]
+
+# API exposes slicer_filament / slicer_filament_name; Spoolman stores them as:
+SPOOLMAN_SLICER_PRESET_EXTRA_KEYS: tuple[str, ...] = (
+    "bambu_slicer_filament",
+    "bambu_slicer_filament_name",
+)
+
+# Spool-level extras (per-spool overrides + color name).
+SPOOLMAN_SPOOL_EXTRA_KEYS: tuple[str, ...] = (
+    *SPOOLMAN_SLICER_PRESET_EXTRA_KEYS,
+    "bambu_color_name",
+)
+
+# Filament-level extras for hierarchical slicer preset inheritance (filament.extra).
+SPOOLMAN_FILAMENT_EXTRA_KEYS: tuple[str, ...] = SPOOLMAN_SLICER_PRESET_EXTRA_KEYS
+
 
 @dataclass
 class SpoolmanSpool:
@@ -854,23 +871,35 @@ class SpoolmanClient:
 
     async def ensure_tag_extra_field(self) -> bool:
         """Register the 'tag' extra field in Spoolman if not present; returns True on success."""
-        return await self.ensure_extra_field("tag")
+        return await self.ensure_extra_field("tag", entity_type="spool")
 
-    async def ensure_extra_field(self, name: str, field_type: str = "text") -> bool:
+    async def ensure_extra_field(
+        self,
+        name: str,
+        field_type: str = "text",
+        *,
+        entity_type: SpoolmanEntityType = "spool",
+    ) -> bool:
         """Register a custom extra field in Spoolman if not present.
 
         Spoolman rejects PATCH requests that include unknown extra-dict keys
         with HTTP 400 ('Unknown extra field <name>.'), so any custom field
-        Bambuddy persists alongside spools needs to be pre-registered.
+        Bambuddy persists in spool or filament ``extra`` must be pre-registered
+        for that entity type.
         Idempotent — returns True if the field already exists.
         """
         try:
             client = await self._get_client()
+            field_path = f"{self.api_url}/field/{entity_type}/{name}"
 
             # Check if field already exists
-            response = await client.get(f"{self.api_url}/field/spool/{name}")
+            response = await client.get(field_path)
             if response.status_code == 200:
-                logger.debug("Spoolman extra field %r already exists", name)
+                logger.debug(
+                    "Spoolman %s extra field %r already exists",
+                    entity_type,
+                    name,
+                )
                 return True
 
             # Field doesn't exist - create it
@@ -879,13 +908,14 @@ class SpoolmanClient:
                 "field_type": field_type,
                 "default_value": None,
             }
-            response = await client.post(f"{self.api_url}/field/spool/{name}", json=field_data)
+            response = await client.post(field_path, json=field_data)
             if response.status_code in (200, 201):
-                logger.info("Created Spoolman extra field %r", name)
+                logger.info("Created Spoolman %s extra field %r", entity_type, name)
                 return True
 
             logger.warning(
-                "Failed to create Spoolman extra field %r: %s - %s",
+                "Failed to create Spoolman %s extra field %r: %s - %s",
+                entity_type,
                 name,
                 response.status_code,
                 response.text,
@@ -893,8 +923,34 @@ class SpoolmanClient:
             return False
 
         except Exception as e:
-            logger.warning("Failed to ensure Spoolman extra field %r exists: %s", name, e)
+            logger.warning(
+                "Failed to ensure Spoolman %s extra field %r exists: %s",
+                entity_type,
+                name,
+                e,
+            )
             return False
+
+    async def ensure_bambuddy_extra_fields(self) -> None:
+        """Register all Bambuddy-managed Spoolman extra fields (spool + filament)."""
+        field_ok = await self.ensure_tag_extra_field()
+        if not field_ok:
+            logger.error("Spoolman tag extra field registration failed — NFC tag links may not persist")
+
+        for field_name in SPOOLMAN_SPOOL_EXTRA_KEYS:
+            if not await self.ensure_extra_field(field_name, entity_type="spool"):
+                logger.warning(
+                    "Spoolman spool extra field %r registration failed — spool inventory edits may return 502",
+                    field_name,
+                )
+
+        for field_name in SPOOLMAN_FILAMENT_EXTRA_KEYS:
+            if not await self.ensure_extra_field(field_name, entity_type="filament"):
+                logger.warning(
+                    "Spoolman filament extra field %r registration failed — "
+                    "filament-level slicer presets (hierarchical profiles) may not persist",
+                    field_name,
+                )
 
     def parse_ams_tray(self, ams_id: int, tray_data: dict) -> AMSTray | None:
         """Parse raw MQTT tray data into an AMSTray; returns None for empty or invalid trays."""

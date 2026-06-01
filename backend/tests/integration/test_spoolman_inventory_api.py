@@ -407,7 +407,7 @@ class TestSpoolmanInventoryCRUD:
         payload = {"color_name": None}
         response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
         assert response.status_code == 200
-        mock_spoolman_client.ensure_extra_field.assert_any_call("bambu_color_name")
+        mock_spoolman_client.ensure_extra_field.assert_any_call("bambu_color_name", entity_type="spool")
         mock_spoolman_client.merge_spool_extra.assert_called_once()
         _, kwargs = mock_spoolman_client.merge_spool_extra.call_args
         # First positional arg is spool_id; second is the extra-dict patch.
@@ -1291,7 +1291,7 @@ class TestColorNamePassthrough:
         }
         response = await async_client.post("/api/v1/spoolman/inventory/spools", json=payload)
         assert response.status_code == 200
-        mock_spoolman_client.ensure_extra_field.assert_any_call("bambu_color_name")
+        mock_spoolman_client.ensure_extra_field.assert_any_call("bambu_color_name", entity_type="spool")
         mock_spoolman_client.merge_spool_extra.assert_called_once()
         args = mock_spoolman_client.merge_spool_extra.call_args.args
         extra_patch = args[1]
@@ -1313,7 +1313,7 @@ class TestColorNamePassthrough:
         payload = {"color_name": "Jade White"}
         response = await async_client.patch("/api/v1/spoolman/inventory/spools/42", json=payload)
         assert response.status_code == 200
-        mock_spoolman_client.ensure_extra_field.assert_any_call("bambu_color_name")
+        mock_spoolman_client.ensure_extra_field.assert_any_call("bambu_color_name", entity_type="spool")
         mock_spoolman_client.merge_spool_extra.assert_called_once()
         args = mock_spoolman_client.merge_spool_extra.call_args.args
         extra_patch = args[1]

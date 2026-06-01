@@ -3531,6 +3531,8 @@ export default {
     filament: 'Filament-Profil',
     filamentSlot: 'Filament {{index}} – {{type}}',
     selectPreset: '— Profil auswählen —',
+    searchPresets: 'Voreinstellungen suchen…',
+    noPresetsMatch: 'Keine passenden Voreinstellungen',
     loadingPresets: 'Profile werden geladen…',
     analyzingPlateFilaments: 'Plattenfilamente werden analysiert…',
     analyzingPlateFilamentsHint: 'Es wird ein Probeschnitt ausgeführt, um die belegten AMS-Slots dieser Platte zu ermitteln. Wird zwischengespeichert — erneutes Öffnen ist sofort.',
@@ -3705,6 +3707,7 @@ export default {
     measuredWeightError: 'Das gemessene Gewicht muss zwischen {{min}}g und {{max}}g liegen.',
     slicerFilament: 'Slicer-Filament',
     slicerFilamentName: 'Slicer-Preset-Name',
+    inheritedFromFilament: 'Vom Filament übernommen',
     slicerPreset: 'Slicer-Preset',
     searchPresets: 'Filament-Presets suchen...',
     selectedPreset: 'Ausgewählt',
@@ -5463,6 +5466,7 @@ export default {
       noResults: 'Keine passenden Spulen',
       spools: 'Spulen',
       addSpool: 'Spule hinzufügen',
+      inheritedFromFilament: 'Vom Filament übernommen',
     },
     settings: {
       // Tabs

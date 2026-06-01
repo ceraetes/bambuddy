@@ -530,11 +530,11 @@ async def create_spool(
     if data.slicer_filament is not None or data.slicer_filament_name is not None or data.color_name is not None:
         # Ensure extra fields are registered before write.
         if data.slicer_filament is not None:
-            await client.ensure_extra_field("bambu_slicer_filament")
+            await client.ensure_extra_field("bambu_slicer_filament", entity_type="spool")
         if data.slicer_filament_name is not None:
-            await client.ensure_extra_field("bambu_slicer_filament_name")
+            await client.ensure_extra_field("bambu_slicer_filament_name", entity_type="spool")
         if data.color_name is not None:
-            await client.ensure_extra_field("bambu_color_name")
+            await client.ensure_extra_field("bambu_color_name", entity_type="spool")
         new_extra: dict = {}
         if data.slicer_filament is not None:
             new_extra["bambu_slicer_filament"] = json.dumps(data.slicer_filament)
@@ -800,11 +800,11 @@ async def update_spool(
         # Ensure extra fields are registered (Spoolman rejects PATCHes with
         # unknown keys with HTTP 400). Idempotent if startup already ran this.
         if sf_set:
-            await client.ensure_extra_field("bambu_slicer_filament")
+            await client.ensure_extra_field("bambu_slicer_filament", entity_type="spool")
         if sfn_set:
-            await client.ensure_extra_field("bambu_slicer_filament_name")
+            await client.ensure_extra_field("bambu_slicer_filament_name", entity_type="spool")
         if cn_set:
-            await client.ensure_extra_field("bambu_color_name")
+            await client.ensure_extra_field("bambu_color_name", entity_type="spool")
         new_extra: dict = {}
         if sf_set:
             new_extra["bambu_slicer_filament"] = json.dumps(data.slicer_filament or "")

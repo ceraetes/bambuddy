@@ -3534,6 +3534,8 @@ export default {
     filament: 'Perfil de filamento',
     filamentSlot: 'Filamento {{index}} ({{type}})',
     selectPreset: '— Seleccione un preajuste —',
+    searchPresets: 'Buscar preajustes…',
+    noPresetsMatch: 'Ningún preajuste coincide',
     loadingPresets: 'Cargando preajustes…',
     analyzingPlateFilaments: 'Analizando los filamentos de la cama…',
     analyzingPlateFilamentsHint: 'Ejecutando un laminado de vista previa para descubrir qué ranuras del AMS usa esta cama. Después se almacena en caché — volver a abrir es instantáneo.',
@@ -3708,6 +3710,7 @@ export default {
     measuredWeightError: 'El peso medido debe estar entre {{min}} g y {{max}} g.',
     slicerFilament: 'Filamento del laminador',
     slicerFilamentName: 'Nombre del preajuste del laminador',
+    inheritedFromFilament: 'Heredado del filamento',
     slicerPreset: 'Preajuste del laminador',
     searchPresets: 'Buscar preajustes de filamento...',
     selectedPreset: 'Seleccionado',
@@ -5472,6 +5475,7 @@ export default {
       noResults: 'No hay bobinas coincidentes',
       spools: 'bobinas',
       addSpool: 'Añadir bobina',
+      inheritedFromFilament: 'Heredado del filamento',
     },
     settings: {
       // Tabs
