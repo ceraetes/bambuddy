@@ -1,3 +1,4 @@
 # Branches merged onto origin/dev before building ghcr.io/ceraetes/bambuddy:dev
 # One branch name per line; lines starting with # are ignored.
 feature/slicing-spoolman
+feature/3mf-project-overrides
