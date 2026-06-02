@@ -979,13 +979,6 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                   const label = isUsed
                     ? baseLabel
                     : `${baseLabel} ${t('slice.notUsedByPlate')}`;
-                  const slotSpool =
-                    inventorySpoolsQuery.data && presetsQuery.data
-                      ? findSpoolForSlot(inventorySpoolsQuery.data, {
-                          type: slot.type,
-                          color: slot.color,
-                        })
-                      : null;
                   return (
                     <PresetCombobox
                       key={`filament-${idx}`}
@@ -1006,7 +999,6 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                       swatchColor={filamentSlots.length > 1 ? slot.color : undefined}
                       selectedPrinterName={selectedPrinterName}
                       compatIndex={compatIndex}
-                      slotSpool={slotSpool}
                     />
                   );
                 })
