@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type {
-  InventorySpool,
   PresetRef,
   UnifiedPreset,
   UnifiedPresetsBySlot,
@@ -32,7 +31,6 @@ export interface PresetComboboxProps {
   swatchColor?: string;
   selectedPrinterName?: string | null;
   compatIndex?: PrinterCompatibilityIndex;
-  slotSpool?: InventorySpool | null;
 }
 
 function findPresetInData(
@@ -50,21 +48,12 @@ function findPresetInData(
   return null;
 }
 
-function presetSearchHaystack(p: UnifiedPreset, slotSpool?: InventorySpool | null): string {
-  const parts = [p.name, p.filament_type ?? '', p.filament_colour ?? ''];
-  if (slotSpool) {
-    parts.push(
-      slotSpool.slicer_filament_name ?? '',
-      slotSpool.slicer_filament ?? '',
-      slotSpool.color_name ?? '',
-      slotSpool.material ?? '',
-    );
-  }
-  return parts.join(' ').toLowerCase();
+function presetSearchHaystack(p: UnifiedPreset): string {
+  return [p.name, p.filament_type ?? '', p.filament_colour ?? ''].join(' ').toLowerCase();
 }
 
-function matchesQuery(p: UnifiedPreset, query: string, slotSpool?: InventorySpool | null): boolean {
-  return fuzzyMatchesHaystack(presetSearchHaystack(p, slotSpool), query);
+function matchesQuery(p: UnifiedPreset, query: string): boolean {
+  return fuzzyMatchesHaystack(presetSearchHaystack(p), query);
 }
 
 export function PresetCombobox({
@@ -77,7 +66,6 @@ export function PresetCombobox({
   swatchColor,
   selectedPrinterName,
   compatIndex = EMPTY_COMPATIBILITY_INDEX,
-  slotSpool,
 }: PresetComboboxProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -108,7 +96,7 @@ export function PresetCombobox({
     for (const { key, labelKey, fallback } of tiers) {
       let entries = (data[key] as UnifiedPresetsBySlot)[slot];
       if (q) {
-        entries = entries.filter((p: UnifiedPreset) => matchesQuery(p, q, slotSpool));
+        entries = entries.filter((p: UnifiedPreset) => matchesQuery(p, q));
       }
       if (slot !== 'printer' && selectedPrinterName) {
         entries = entries.filter(
@@ -128,7 +116,7 @@ export function PresetCombobox({
       }
     }
     return out;
-  }, [data, query, slot, selectedPrinterName, compatIndex, slotSpool, t]);
+  }, [data, query, slot, selectedPrinterName, compatIndex, t]);
 
   const totalEntries = sections.reduce((sum, s) => sum + s.entries.length, 0);
 

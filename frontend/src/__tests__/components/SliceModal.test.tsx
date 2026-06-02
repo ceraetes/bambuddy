@@ -1272,6 +1272,69 @@ describe('SliceModal', () => {
     expect(presetComboInputs()[2].value).toBe('Bambu PLA Basic @BBL P1S');
   });
 
+  it('filters filament by preset name when inventory spool is linked (not shared spool text)', async () => {
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+      file_id: 100,
+      filename: 'Cube.3mf',
+      plate_id: 1,
+      filaments: [{ slot_id: 1, type: 'PLA', color: '#000000', used_grams: 10, used_meters: 3 }],
+    });
+    mockApi.getSpools.mockResolvedValue([
+      {
+        id: 1,
+        material: 'PLA',
+        color_name: 'Black',
+        rgba: '#000000',
+        slicer_filament_name: 'Bambu PLA Basic Black',
+        slicer_filament: 'GFB00',
+        subtype: null,
+        brand: null,
+        label_weight: 1000,
+        core_weight: 0,
+        core_weight_catalog_id: null,
+        weight_used: 0,
+        extra_colors: null,
+        effect_type: null,
+        nozzle_temp_min: null,
+        nozzle_temp_max: null,
+        note: null,
+        added_full: null,
+        archived_at: null,
+      },
+    ]);
+    mockApi.getSlicerPresets.mockResolvedValue(
+      makeUnified({
+        cloud: {
+          printer: [{ id: 'P1', name: 'X1C', source: 'cloud' }],
+          process: [{ id: 'PR1', name: '0.20mm', source: 'cloud' }],
+          filament: [
+            { id: 'F-BLACK', name: 'Bambu PLA Basic Black', source: 'cloud', filament_type: 'PLA' },
+            { id: 'F-PETG', name: 'Bambu PETG HF', source: 'cloud', filament_type: 'PETG' },
+          ],
+        },
+      }),
+    );
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Cube.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitForPresetDisplay('X1C');
+
+    const user = userEvent.setup();
+    const input = presetComboInputs()[2];
+    await user.click(input);
+    // "bas" appears in the linked spool profile and would match every preset if
+    // spool fields were merged into each option's haystack; only the PLA name has it.
+    await user.type(input, 'bas');
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Bambu PLA Basic Black' })).toBeDefined();
+      expect(screen.queryByRole('option', { name: 'Bambu PETG HF' })).toBeNull();
+    });
+  });
+
   it('fuzzy-filters filament presets in the combobox as the user types', async () => {
     mockApi.getSlicerPresets.mockResolvedValue(
       makeUnified({
