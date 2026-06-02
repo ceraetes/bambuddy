@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildCompatibilityIndex,
+  canonicalBblShortCode,
   presetCompatibility,
+  printerModelTokensEquivalent,
   sortPresetsByPrinterTier,
   EMPTY_COMPATIBILITY_INDEX,
   type CompatibilityBundle,
@@ -213,6 +215,18 @@ describe('presetCompatibility', () => {
 
 // ─── #1325 follow-up: @BBL name fallback ──────────────────────────────────
 
+describe('canonicalBblShortCode', () => {
+  it('maps A1M to A1 Mini', () => {
+    expect(canonicalBblShortCode('A1M')).toBe('A1 Mini');
+    expect(canonicalBblShortCode('a1m')).toBe('A1 Mini');
+  });
+
+  it('treats A1M and A1 Mini as equivalent printer model tokens', () => {
+    expect(printerModelTokensEquivalent('A1M', 'A1 Mini')).toBe(true);
+    expect(printerModelTokensEquivalent('A1M', 'A1')).toBe(false);
+  });
+});
+
 describe('presetCompatibility — @BBL name fallback (no bundles)', () => {
   // No bundles, but with the registry loaded — exactly the new-user shape.
   const idx = buildCompatibilityIndex([], PRINTER_MODELS);
@@ -233,6 +247,9 @@ describe('presetCompatibility — @BBL name fallback (no bundles)', () => {
     ['0.20mm Standard @BBL A1', 'Bambu Lab A1 mini 0.4 nozzle', 'mismatch'],
     // @BBL "A1 Mini" — multi-word token
     ['0.20mm Standard @BBL A1 Mini', 'Bambu Lab A1 mini 0.4 nozzle', 'match'],
+    // @BBL A1M — compact token used on many cloud process presets
+    ['0.20mm Standard @BBL A1M', 'Bambu Lab A1 mini 0.4 nozzle', 'match'],
+    ['0.20mm Standard @BBL A1M', 'Bambu Lab A1 0.4 nozzle', 'mismatch'],
     // @BBL H2D vs H2D Pro disambiguation
     ['0.20mm Standard @BBL H2D', 'Bambu Lab H2D 0.4 nozzle', 'match'],
     ['0.20mm Standard @BBL H2D', 'Bambu Lab H2D Pro 0.4 nozzle', 'mismatch'],

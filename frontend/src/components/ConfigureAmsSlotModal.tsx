@@ -5,6 +5,9 @@ import { X, Loader2, Settings2, ChevronDown, CheckCircle2, RotateCcw } from 'luc
 import { api } from '../api/client';
 import type { KProfile } from '../api/client';
 import { Button } from './Button';
+import { fuzzyMatchesHaystack } from '../utils/fuzzyMatch';
+import { highlightFuzzyMatch } from '../utils/highlightMatch';
+import { printerModelTokensEquivalent } from '../utils/slicerPrinterMatch';
 
 interface SlotInfo {
   amsId: number;
@@ -600,11 +603,11 @@ export function ConfigureAmsSlotModal({
         const isCurrentPreset = isSavedPreset
           || (trayIdx && (cp.setting_id === trayIdx || convertToTrayInfoIdx(cp.setting_id) === trayIdx));
         // Search filter applies to ALL presets (including saved) — no bypass
-        if (query && !cp.name.toLowerCase().includes(query)) continue;
+        if (query && !fuzzyMatchesHaystack(cp.name.toLowerCase(), query)) continue;
         // Filter by printer model if set (skip for current preset)
         if (!isCurrentPreset && printerModel) {
           const presetModel = extractPresetModel(cp.name);
-          if (presetModel && presetModel.toUpperCase() !== printerModel.toUpperCase()) continue;
+          if (presetModel && !printerModelTokensEquivalent(presetModel, printerModel)) continue;
         }
         items.push({ id: cp.setting_id, name: cp.name, source: 'cloud', isUser: isUserPreset(cp.setting_id) });
       }
@@ -614,7 +617,7 @@ export function ConfigureAmsSlotModal({
     if (localPresets?.filament) {
       for (const lp of localPresets.filament) {
         const localId = `local_${lp.id}`;
-        if (query && !lp.name.toLowerCase().includes(query)) continue;
+        if (query && !fuzzyMatchesHaystack(lp.name.toLowerCase(), query)) continue;
         items.push({ id: localId, name: lp.name, source: 'local', isUser: false });
       }
     }
@@ -629,7 +632,7 @@ export function ConfigureAmsSlotModal({
           ? 'GFS' + bf.filament_id.slice(2)
           : bf.filament_id;
         if (coveredIds.has(settingId)) continue;
-        if (!query || bf.name.toLowerCase().includes(query)) {
+        if (!query || fuzzyMatchesHaystack(bf.name.toLowerCase(), query)) {
           items.push({ id: `builtin_${bf.filament_id}`, name: bf.name, source: 'builtin', isUser: false });
         }
       }
@@ -1029,7 +1032,7 @@ export function ConfigureAmsSlotModal({
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{preset.name}</span>
+                          <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{highlightFuzzyMatch(preset.name, searchQuery)}</span>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             {preset.source === 'local' && (
                               <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
@@ -1264,7 +1267,7 @@ export function ConfigureAmsSlotModal({
                           }`}
                         >
                           <div className="flex items-center justify-between">
-                            <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{preset.name}</span>
+                            <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{highlightFuzzyMatch(preset.name, searchQuery)}</span>
                             <div className="flex items-center gap-1 flex-shrink-0">
                               {preset.source === 'local' && (
                                 <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
