@@ -39,24 +39,25 @@ jobs:
       - name: Fetch branches
         id: fetch
         run: |
-          chmod +x .github/scripts/integration-branches.sh .github/scripts/integration-merge.sh
+          git config core.fileMode false
           git fetch origin dev
           while IFS= read -r b; do
             [ -n "$b" ] || continue
             git fetch origin "$b" || { echo "ERROR: could not fetch origin/$b"; exit 1; }
-          done < <(.github/scripts/integration-branches.sh list)
-          echo "fingerprint=$(.github/scripts/integration-branches.sh fingerprint)" >> "$GITHUB_OUTPUT"
+          done < <(bash .github/scripts/integration-branches.sh list)
+          echo "fingerprint=$(bash .github/scripts/integration-branches.sh fingerprint)" >> "$GITHUB_OUTPUT"
 
       - name: Validate merge order
-        run: .github/scripts/integration-branches.sh validate
+        run: bash .github/scripts/integration-branches.sh validate
 
       - name: Merge dev and integration branches
         id: merge
         run: |
+          git config core.fileMode false
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           set +e
-          merge_out=$(.github/scripts/integration-merge.sh 2>&1)
+          merge_out=$(bash .github/scripts/integration-merge.sh 2>&1)
           merge_rc=$?
           set -e
           echo "$merge_out"

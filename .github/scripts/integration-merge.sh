@@ -8,10 +8,13 @@ branch_from_line() {
   echo "$1" | awk '{print $1}'
 }
 
-list_branches() {
+# Write branch names to $1 (integration-branches must be read before leaving ceraetes/ci).
+write_branch_list() {
+  local dest="$1"
+  : >"$dest"
   while IFS= read -r line; do
     branch_from_line "$line"
-  done < <(grep -v '^\s*#' "$INTEGRATION_FILE" | grep -v '^\s*$')
+  done < <(grep -v '^\s*#' "$INTEGRATION_FILE" | grep -v '^\s*$') >>"$dest"
 }
 
 # Merge one branch; auto-resolve prebuilt static/ from the feature branch only.
@@ -48,11 +51,20 @@ merge_branch() {
   return 0
 }
 
-git checkout -B integration-build origin/dev
+BRANCH_LIST=$(mktemp)
+trap 'rm -f "$BRANCH_LIST"' EXIT
+
+write_branch_list "$BRANCH_LIST"
+
+# chmod in the workflow dirties these tracked files on ceraetes/ci; reset before dev checkout.
+git reset --hard HEAD
+git clean -fd
+
+git checkout -f -B integration-build origin/dev
 
 while IFS= read -r b; do
   [ -n "$b" ] || continue
   merge_branch "$b" || exit 1
-done < <(list_branches)
+done <"$BRANCH_LIST"
 
 echo "sha=$(git rev-parse HEAD)"
