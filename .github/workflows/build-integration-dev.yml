@@ -37,6 +37,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Fetch branches
+        id: fetch
         run: |
           chmod +x .github/scripts/integration-branches.sh .github/scripts/integration-merge.sh
           git fetch origin dev
@@ -44,6 +45,7 @@ jobs:
             [ -n "$b" ] || continue
             git fetch origin "$b" || { echo "ERROR: could not fetch origin/$b"; exit 1; }
           done < <(.github/scripts/integration-branches.sh list)
+          echo "fingerprint=$(.github/scripts/integration-branches.sh fingerprint)" >> "$GITHUB_OUTPUT"
 
       - name: Validate merge order
         run: .github/scripts/integration-branches.sh validate
@@ -123,13 +125,20 @@ jobs:
             exit 1
           fi
 
+      - name: Checkout ceraetes/ci for fingerprint
+        if: success()
+        uses: actions/checkout@v4
+        with:
+          ref: ceraetes/ci
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Record integration fingerprint
         if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout ceraetes/ci
-          .github/scripts/integration-branches.sh fingerprint > .github/integration-build-fingerprint
+          printf '%s\n' "${{ steps.fetch.outputs.fingerprint }}" > .github/integration-build-fingerprint
           git add .github/integration-build-fingerprint
           git diff --staged --quiet || git commit -m "chore(ci): record integration build fingerprint"
           git push origin ceraetes/ci
