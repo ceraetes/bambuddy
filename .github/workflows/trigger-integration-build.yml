@@ -12,6 +12,7 @@ on:
 
 permissions:
   actions: write
+  contents: read
 
 concurrency:
   group: trigger-integration-${{ github.ref }}
@@ -27,12 +28,6 @@ jobs:
         with:
           script: |
             const ref = context.ref.replace('refs/heads/', '');
-            await github.rest.repos.createDispatchEvent({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              event_type: 'integration-rebuild',
-              client_payload: { branch: ref, sha: context.sha },
-            });
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
