@@ -1,8 +1,9 @@
-name: Build dev image
+# Deprecated: dev image is built by build-integration-dev.yml (merges dev + feature branches).
+# Kept for manual workflow_dispatch only during transition.
+
+name: Build dev image (deprecated)
 
 on:
-  push:
-    branches: [dev]
   workflow_dispatch:
 
 permissions:
@@ -14,49 +15,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-push:
-    name: Build and push ghcr.io/ceraetes/bambuddy:dev
+  redirect:
+    name: Use Build integration dev image instead
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ghcr.io/ceraetes/bambuddy:dev
-
-      - name: Verify push digest
-        run: |
-          echo "Pushed digest: ${{ steps.build.outputs.digest }}"
-          if [ -z "${{ steps.build.outputs.digest }}" ]; then
-            echo "ERROR: Build step did not produce a digest"
-            exit 1
-          fi
-
-      - name: Notify HA add-on repo
-        continue-on-error: true
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.HA_REPO_PAT }}
-          repository: ceraetes/homeassistant-app-bambuddy
-          event-type: dev-image-pushed
-          client-payload: >-
-            {"digest":"${{ steps.build.outputs.digest }}","ref":"${{ github.sha }}"}
+      - run: |
+          echo "::warning::This workflow is deprecated. Run 'Build integration dev image' instead."
+          exit 1

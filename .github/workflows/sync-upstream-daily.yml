@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   issues: write
+  actions: write
 
 concurrency:
   group: sync-upstream-daily
@@ -18,10 +19,10 @@ jobs:
     name: Merge upstream dev when maziggy daily changes
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout dev
+      - name: Checkout ceraetes/ci
         uses: actions/checkout@v4
         with:
-          ref: dev
+          ref: ceraetes/ci
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -70,18 +71,21 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Fetch and merge maziggy/dev
+      - name: Fetch and merge maziggy/dev into origin/dev
         id: merge
         if: steps.compare.outputs.changed == 'true'
         continue-on-error: true
         run: |
           git remote add upstream https://github.com/maziggy/bambuddy.git || true
           git fetch upstream dev
+          git fetch origin dev
+          git checkout -B dev origin/dev
           set +e
           git merge upstream/dev --no-edit
           MERGE_RC=$?
           set -e
           if [ "$MERGE_RC" -eq 0 ]; then
+            git push origin dev
             echo "status=clean" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -107,20 +111,27 @@ jobs:
             echo "$FILES"
             echo '```'
             echo ""
-            echo "Resolve locally, then \`git push origin dev\` to trigger \`build-dev-image\`."
+            echo "Resolve locally, push \`dev\`, then run **Build integration dev image**."
           } > "$BODY_FILE"
           gh issue create \
             --title "Upstream daily sync failed: merge conflict (${{ steps.upstream.outputs.short }})" \
             --body-file "$BODY_FILE" || echo "::warning::Could not create issue"
           exit 1
 
-      - name: Record digest and push
+      - name: Record digest on ceraetes/ci
         if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.status == 'clean'
         run: |
+          git checkout ceraetes/ci
           echo "${{ steps.upstream.outputs.digest }}" > .github/upstream-daily-digest
           git add .github/upstream-daily-digest
-          git diff --staged --quiet && git diff --quiet || git commit -m "chore: sync upstream daily (${{ steps.upstream.outputs.short }})"
-          git push origin dev
+          git diff --staged --quiet || git commit -m "chore: sync upstream daily (${{ steps.upstream.outputs.short }})"
+          git push origin ceraetes/ci
+
+      - name: Trigger integration build
+        if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.status == 'clean'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run build-integration-dev.yml --ref ceraetes/ci
 
       - name: Fail job after merge conflict
         if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.status == 'conflict'
