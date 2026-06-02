@@ -103,6 +103,29 @@ export function matchesPrinterModelSuffix(presetSuffix: string, printerModel: st
  * code; case normalisation happens at match time so "A1 mini" vs "A1 Mini"
  * never matters.
  */
+// Alternate @BBL tokens Bambu Studio uses in cloud preset names (e.g. "A1M"
+// for A1 Mini). Keys are compact lowercase for lookup; values are canonical
+// short codes from PRINTER_MODEL_MAP.
+const BBL_SHORT_CODE_ALIASES: Record<string, string> = {
+  a1m: 'A1 Mini',
+  a1mini: 'A1 Mini',
+};
+
+/** Map an @BBL suffix token to the canonical short code (e.g. A1M → A1 Mini). */
+export function canonicalBblShortCode(token: string): string {
+  const trimmed = token.trim();
+  const alias = BBL_SHORT_CODE_ALIASES[trimmed.replace(/\s+/g, '').toLowerCase()];
+  return alias ?? trimmed;
+}
+
+/** True when two printer-model strings refer to the same machine (A1M ≡ A1 Mini). */
+export function printerModelTokensEquivalent(a: string, b: string): boolean {
+  return (
+    canonicalBblShortCode(a).replace(/\s+/g, '').toLowerCase() ===
+    canonicalBblShortCode(b).replace(/\s+/g, '').toLowerCase()
+  );
+}
+
 function buildShortCodeMap(
   printerModels: Record<string, string>,
 ): Record<string, string> {
@@ -110,6 +133,14 @@ function buildShortCodeMap(
   for (const [longName, shortCode] of Object.entries(printerModels)) {
     if (shortCode in out) continue;
     out[shortCode] = longName.replace(/^Bambu Lab\s+/, '');
+  }
+  for (const [aliasKey, canonicalCode] of Object.entries(BBL_SHORT_CODE_ALIASES)) {
+    const fragment = out[canonicalCode];
+    if (fragment) {
+      const aliasUpper =
+        aliasKey === 'a1m' ? 'A1M' : aliasKey === 'a1mini' ? 'A1MINI' : aliasKey.toUpperCase();
+      if (!(aliasUpper in out)) out[aliasUpper] = fragment;
+    }
   }
   return out;
 }
@@ -268,7 +299,8 @@ function classifyByBambuName(
   // identical — e.g. "Q1" preset against "Bambu Lab Q1 0.4 nozzle" —
   // without us having to ship a code update. When they differ in form
   // (X1C vs "X1 Carbon"), the registry is what makes the match work.
-  const inferredModel = bambuModelByShortCode[parsed.token] ?? parsed.token;
+  const token = canonicalBblShortCode(parsed.token);
+  const inferredModel = bambuModelByShortCode[token] ?? bambuModelByShortCode[parsed.token] ?? token;
   const selectedParts = extractPrinterPresetModel(selectedPrinterName);
   if (!selectedParts) return 'unknown';
   const modelsAlign =

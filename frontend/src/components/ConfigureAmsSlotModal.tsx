@@ -4,8 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { X, Loader2, Settings2, ChevronDown, CheckCircle2, RotateCcw } from 'lucide-react';
 import { api } from '../api/client';
 import type { KProfile } from '../api/client';
-import { matchesPrinterModelSuffix } from '../utils/slicerPrinterMatch';
 import { Button } from './Button';
+import { fuzzyMatchesHaystack } from '../utils/fuzzyMatch';
+import { highlightFuzzyMatch } from '../utils/highlightMatch';
+import { printerModelTokensEquivalent } from '../utils/slicerPrinterMatch';
 
 interface SlotInfo {
   amsId: number;
@@ -581,10 +583,10 @@ export function ConfigureAmsSlotModal({
         const orcaId = `orca_${op.setting_id}`;
         coveredIds.add(op.setting_id);
         coveredIds.add(orcaId);
-        if (query && !op.name.toLowerCase().includes(query)) continue;
+        if (query && !fuzzyMatchesHaystack(op.name.toLowerCase(), query)) continue;
         if (printerModel) {
           const presetModel = extractPresetModel(op.name);
-          if (presetModel && !matchesPrinterModelSuffix(presetModel, printerModel)) continue;
+          if (presetModel && !printerModelTokensEquivalent(presetModel, printerModel)) continue;
         }
         // All Orca Cloud profiles are user-authored, so isUser is always true.
         items.push({ id: orcaId, name: op.name, source: 'orca_cloud', isUser: true });
@@ -601,13 +603,13 @@ export function ConfigureAmsSlotModal({
         const isCurrentPreset = isSavedPreset
           || (trayIdx && (cp.setting_id === trayIdx || convertToTrayInfoIdx(cp.setting_id) === trayIdx));
         // Search filter applies to ALL presets (including saved) — no bypass
-        if (query && !cp.name.toLowerCase().includes(query)) continue;
-        // Filter by printer model if set (skip for current preset). Uses the
+        if (query && !fuzzyMatchesHaystack(cp.name.toLowerCase(), query)) continue;
+        // Filter by printer model if set (skip for current preset). Uses
         // alias-aware match so Bambu's "A1 Mini" → "A1M" cloud rename (#1649)
         // doesn't hide A1 Mini cloud profiles.
         if (!isCurrentPreset && printerModel) {
           const presetModel = extractPresetModel(cp.name);
-          if (presetModel && !matchesPrinterModelSuffix(presetModel, printerModel)) continue;
+          if (presetModel && !printerModelTokensEquivalent(presetModel, printerModel)) continue;
         }
         items.push({ id: cp.setting_id, name: cp.name, source: 'cloud', isUser: isUserPreset(cp.setting_id) });
       }
@@ -617,7 +619,7 @@ export function ConfigureAmsSlotModal({
     if (localPresets?.filament) {
       for (const lp of localPresets.filament) {
         const localId = `local_${lp.id}`;
-        if (query && !lp.name.toLowerCase().includes(query)) continue;
+        if (query && !fuzzyMatchesHaystack(lp.name.toLowerCase(), query)) continue;
         items.push({ id: localId, name: lp.name, source: 'local', isUser: false });
       }
     }
@@ -632,7 +634,7 @@ export function ConfigureAmsSlotModal({
           ? 'GFS' + bf.filament_id.slice(2)
           : bf.filament_id;
         if (coveredIds.has(settingId)) continue;
-        if (!query || bf.name.toLowerCase().includes(query)) {
+        if (!query || fuzzyMatchesHaystack(bf.name.toLowerCase(), query)) {
           items.push({ id: `builtin_${bf.filament_id}`, name: bf.name, source: 'builtin', isUser: false });
         }
       }
@@ -1032,7 +1034,7 @@ export function ConfigureAmsSlotModal({
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{preset.name}</span>
+                          <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{highlightFuzzyMatch(preset.name, searchQuery)}</span>
                           <div className="flex items-center gap-1 flex-shrink-0">
                             {preset.source === 'local' && (
                               <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
@@ -1267,7 +1269,7 @@ export function ConfigureAmsSlotModal({
                           }`}
                         >
                           <div className="flex items-center justify-between">
-                            <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{preset.name}</span>
+                            <span className="text-white text-sm truncate group-hover:whitespace-normal group-hover:break-all" title={preset.name}>{highlightFuzzyMatch(preset.name, searchQuery)}</span>
                             <div className="flex items-center gap-1 flex-shrink-0">
                               {preset.source === 'local' && (
                                 <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">

@@ -3,6 +3,8 @@ import { Search, Loader2, ChevronDown, Cloud, CloudOff } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { FilamentSectionProps, FilamentOption } from './types';
 import { KNOWN_VARIANTS } from './constants';
+import { fuzzyMatchesHaystack } from '../../utils/fuzzyMatch';
+import { highlightFuzzyMatch } from '../../utils/highlightMatch';
 import { parsePresetName } from './utils';
 
 export function FilamentSection({
@@ -59,11 +61,12 @@ export function FilamentSection({
 
   // Filtered presets based on search
   const filteredPresets = useMemo(() => {
-    if (!presetInputValue) return filamentOptions;
-    const search = presetInputValue.toLowerCase();
-    return filamentOptions.filter(o =>
-      o.displayName.toLowerCase().includes(search) ||
-      o.code.toLowerCase().includes(search),
+    const q = presetInputValue.trim();
+    if (!q) return filamentOptions;
+    return filamentOptions.filter(
+      (o) =>
+        fuzzyMatchesHaystack(`${o.displayName} ${o.code}`.toLowerCase(), q) ||
+        fuzzyMatchesHaystack(o.name.toLowerCase(), q),
     );
   }, [filamentOptions, presetInputValue]);
 
@@ -172,9 +175,10 @@ export function FilamentSection({
                           ? 'bg-bambu-green/10 text-bambu-green'
                           : 'text-white'
                       }`}
+                      aria-label={option.displayName}
                       onClick={() => handlePresetSelect(option)}
                     >
-                      {option.displayName}
+                      {highlightFuzzyMatch(option.displayName, presetInputValue)}
                     </button>
                   ))
                 )}

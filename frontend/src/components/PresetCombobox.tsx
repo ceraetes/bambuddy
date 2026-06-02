@@ -13,6 +13,7 @@ import { fuzzyMatchesHaystack } from '../utils/fuzzyMatch';
 import { highlightFuzzyMatch } from '../utils/highlightMatch';
 import {
   EMPTY_COMPATIBILITY_INDEX,
+  presetCompatibility,
   sortPresetsByPrinterTier,
   type PrinterCompatibilityIndex,
 } from '../utils/slicerPrinterMatch';
@@ -108,6 +109,11 @@ export function PresetCombobox({
       let entries = (data[key] as UnifiedPresetsBySlot)[slot];
       if (q) {
         entries = entries.filter((p: UnifiedPreset) => matchesQuery(p, q, slotSpool));
+      }
+      if (slot !== 'printer' && selectedPrinterName) {
+        entries = entries.filter(
+          (p) => presetCompatibility(p, slot, selectedPrinterName, compatIndex) !== 'mismatch',
+        );
       }
       if (slot !== 'printer') {
         entries = sortPresetsByPrinterTier(

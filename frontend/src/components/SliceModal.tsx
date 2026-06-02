@@ -26,6 +26,7 @@ import {
   type PrinterCompatibilityIndex,
 } from '../utils/slicerPrinterMatch';
 import { PresetCombobox } from './PresetCombobox';
+import { StringListCombobox } from './StringListCombobox';
 import { matchPresetByProfile, type PrinterModelMap } from '../utils/slicerProfileResolve';
 
 export type SliceSource =
@@ -1231,58 +1232,14 @@ function BundlePicker({ bundles, selectedId, onChange, disabled }: BundlePickerP
   );
 }
 
-// Plain-string dropdown used for bundle-mode process / filament selectors.
-// Bundles store presets as a flat list of names within their printer-tied
-// directory, so a `<select>` of strings is enough — no source tier, no
-// optgroups. Same swatch / disabled affordances as the cloud/local/standard
-// PresetDropdown above so the visual rhythm of the form stays consistent.
-interface BundleStringDropdownProps {
+/** Bundle-mode process / filament picker — fuzzy-filtered string list. */
+function BundleStringDropdown(props: {
   label: string;
   options: string[];
   value: string | null;
   onChange: (next: string | null) => void;
   disabled?: boolean;
   swatchColor?: string;
-}
-
-function BundleStringDropdown({
-  label,
-  options,
-  value,
-  onChange,
-  disabled,
-  swatchColor,
-}: BundleStringDropdownProps) {
-  const { t } = useTranslation();
-  return (
-    <label className="block">
-      <span className="block text-sm text-bambu-gray mb-1 inline-flex items-center gap-1.5">
-        {swatchColor && (
-          <span
-            className="inline-block w-3 h-3 rounded-sm border border-black/20"
-            style={{ backgroundColor: swatchColor || 'transparent' }}
-            aria-hidden
-          />
-        )}
-        <span>{label}</span>
-      </span>
-      <select
-        value={value ?? ''}
-        onChange={(e) => onChange(e.target.value || null)}
-        disabled={disabled || options.length === 0}
-        className="w-full px-3 py-2 rounded-md bg-bambu-dark border border-bambu-dark-tertiary text-white text-sm focus:outline-none focus:border-bambu-gray disabled:opacity-50"
-      >
-        <option value="">
-          {options.length === 0
-            ? t('slice.noPresetsForSlot')
-            : t('slice.selectPreset')}
-        </option>
-        {options.map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+}) {
+  return <StringListCombobox {...props} />;
 }
