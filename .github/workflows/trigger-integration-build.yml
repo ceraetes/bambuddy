@@ -1,0 +1,42 @@
+name: Trigger integration build
+
+# Copy this file onto each feature branch listed in integration-branches so pushes
+# immediately dispatch a rebuild (workflows must exist on the branch that was pushed).
+on:
+  push:
+    branches-ignore:
+      - dev
+      - main
+      - ceraetes/ci
+      - 'backup/**'
+
+permissions:
+  actions: write
+
+concurrency:
+  group: trigger-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    name: Request integration dev image build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch integration rebuild
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const ref = context.ref.replace('refs/heads/', '');
+            await github.rest.repos.createDispatchEvent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              event_type: 'integration-rebuild',
+              client_payload: { branch: ref, sha: context.sha },
+            });
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-integration-dev.yml',
+              ref: 'ceraetes/ci',
+              inputs: { reason: `push:${ref}` },
+            });

@@ -1,4 +1,12 @@
 # Branches merged onto origin/dev before building ghcr.io/ceraetes/bambuddy:dev
-# One branch name per line; lines starting with # are ignored.
+# One branch per line, merged top-to-bottom. Lines starting with # are ignored.
+#
+# Optional: append "after <branch>" to require that branch already includes another
+# integration branch (must appear earlier in this file).
+#
+# Add a new feature branch here, then push ceraetes/ci. Copy
+# .github/workflows/trigger-integration-build.yml onto the feature branch for
+# immediate rebuilds on push (otherwise the watch workflow runs every 10 minutes).
+
 feature/slicing-spoolman
-feature/3mf-project-overrides
+feature/3mf-project-overrides after feature/slicing-spoolman

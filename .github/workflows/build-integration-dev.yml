@@ -2,13 +2,20 @@ name: Build integration dev image
 
 on:
   workflow_dispatch:
+    inputs:
+      reason:
+        description: Why this build was started
+        required: false
+        default: manual
   push:
     branches:
       - ceraetes/ci
-      - feature/slicing-spoolman
+    paths:
+      - '.github/workflows/build-integration-dev.yml'
+      - '.github/scripts/integration-branches.sh'
 
 permissions:
-  contents: read
+  contents: write
   packages: write
   issues: write
 
@@ -30,18 +37,22 @@ jobs:
 
       - name: Fetch branches
         run: |
+          chmod +x .github/scripts/integration-branches.sh
           git fetch origin dev
-          BRANCHES=$(grep -v '^\s*#' .github/integration-branches | grep -v '^\s*$' || true)
-          for b in $BRANCHES; do
+          while IFS= read -r b; do
+            [ -n "$b" ] || continue
             git fetch origin "$b" || { echo "ERROR: could not fetch origin/$b"; exit 1; }
-          done
+          done < <(.github/scripts/integration-branches.sh list)
+
+      - name: Validate merge order
+        run: .github/scripts/integration-branches.sh validate
 
       - name: Merge dev and integration branches
         id: merge
         run: |
           git checkout -B integration-build origin/dev
-          BRANCHES=$(grep -v '^\s*#' .github/integration-branches | grep -v '^\s*$' || true)
-          for b in $BRANCHES; do
+          while IFS= read -r b; do
+            [ -n "$b" ] || continue
             echo "Merging origin/$b ..."
             if ! git merge "origin/$b" --no-edit; then
               git diff --name-only --diff-filter=U > /tmp/conflict-files.txt || true
@@ -49,7 +60,7 @@ jobs:
               echo "status=conflict" >> "$GITHUB_OUTPUT"
               exit 1
             fi
-          done
+          done < <(.github/scripts/integration-branches.sh list)
           echo "status=clean" >> "$GITHUB_OUTPUT"
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -68,7 +79,7 @@ jobs:
             echo "$FILES"
             echo '```'
             echo ""
-            echo "Rebase feature branches onto latest \`dev\`, push, then re-run this workflow."
+            echo "Rebase feature branches onto latest \`dev\` (respect merge order in integration-branches), push, then re-run this workflow."
           } > "$BODY_FILE"
           gh issue create \
             --title "Integration dev build failed: merge conflict" \
@@ -104,11 +115,23 @@ jobs:
         if: success()
         run: |
           echo "Integration SHA: ${{ steps.merge.outputs.sha }}"
+          echo "Triggered by: ${{ inputs.reason }}"
           echo "Pushed digest: ${{ steps.build.outputs.digest }}"
           if [ -z "${{ steps.build.outputs.digest }}" ]; then
             echo "ERROR: Build step did not produce a digest"
             exit 1
           fi
+
+      - name: Record integration fingerprint
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout ceraetes/ci
+          .github/scripts/integration-branches.sh fingerprint > .github/integration-build-fingerprint
+          git add .github/integration-build-fingerprint
+          git diff --staged --quiet || git commit -m "chore(ci): record integration build fingerprint"
+          git push origin ceraetes/ci
 
       - name: Notify HA add-on repo
         if: success()

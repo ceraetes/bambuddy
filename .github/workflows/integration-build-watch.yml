@@ -1,0 +1,70 @@
+name: Integration build watch
+
+# Workflows on ceraetes/ci cannot see pushes to feature branches directly. This job
+# polls integration branch SHAs and starts a build when anything changed.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [integration-rebuild]
+  push:
+    branches:
+      - ceraetes/ci
+    paths:
+      - '.github/integration-branches'
+      - '.github/integration-build-fingerprint'
+      - '.github/workflows/integration-build-watch.yml'
+      - '.github/workflows/build-integration-dev.yml'
+      - '.github/scripts/integration-branches.sh'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: integration-build-watch
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Detect integration branch changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ceraetes/ci
+        uses: actions/checkout@v4
+        with:
+          ref: ceraetes/ci
+          fetch-depth: 0
+
+      - name: Compare integration fingerprint
+        id: compare
+        run: |
+          chmod +x .github/scripts/integration-branches.sh
+          CURRENT=$(.github/scripts/integration-branches.sh fingerprint)
+          STORED=""
+          if [ -f .github/integration-build-fingerprint ]; then
+            STORED=$(tr -d '[:space:]' < .github/integration-build-fingerprint)
+          fi
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Current:  $CURRENT"
+          echo "Stored:   ${STORED:-<none>}"
+          if [ "$STORED" = "$CURRENT" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No integration branch changes — skip build."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Integration inputs changed — will trigger build."
+          fi
+
+      - name: Trigger integration build
+        if: steps.compare.outputs.changed == 'true' || github.event_name == 'repository_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run build-integration-dev.yml --ref ceraetes/ci \
+            -f reason="${{ github.event_name }}"
+
+      - name: Up to date
+        if: steps.compare.outputs.changed != 'true' && github.event_name != 'repository_dispatch'
+        run: echo "Integration fingerprint unchanged."
