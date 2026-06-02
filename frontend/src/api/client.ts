@@ -1387,6 +1387,8 @@ export interface SliceRequest {
   // "Textured PEI Plate", "Smooth PEI Plate", "Cool Plate (SuperTack)",
   // "Supertack Plate".
   bed_type?: string | null;
+  /** For 3MF: map embedded presets to the target printer and merge project_settings overrides. */
+  use_project_overrides?: boolean;
 }
 
 // GET /api/v1/slicer/bundles — Printer Preset Bundles imported from
@@ -1446,6 +1448,7 @@ export interface SliceResponse {
   filament_used_g: number;
   filament_used_mm: number;
   used_embedded_settings: boolean;
+  used_project_overrides?: boolean;
 }
 
 export interface SliceArchiveResponse {
@@ -1455,6 +1458,7 @@ export interface SliceArchiveResponse {
   filament_used_g: number;
   filament_used_mm: number;
   used_embedded_settings: boolean;
+  used_project_overrides?: boolean;
 }
 
 // Background slice-job lifecycle. POST /slice returns 202 + this shape;

@@ -27,7 +27,12 @@ import {
 } from '../utils/slicerPrinterMatch';
 import { PresetCombobox } from './PresetCombobox';
 import { StringListCombobox } from './StringListCombobox';
-import { matchPresetByProfile, type PrinterModelMap } from '../utils/slicerProfileResolve';
+import {
+  appendBblPrinterTag,
+  matchPresetByProfile,
+  stripBblPrinterTag,
+  type PrinterModelMap,
+} from '../utils/slicerProfileResolve';
 
 export type SliceSource =
   | { kind: 'libraryFile'; id: number; filename: string }
@@ -87,6 +92,10 @@ function findPresetByName(
   return null;
 }
 
+function flattenSlotPresets(by: UnifiedPresetsResponse, slot: Slot): UnifiedPreset[] {
+  return SLICE_MODAL_TIER_ORDER.flatMap((tier) => by[tier][slot]);
+}
+
 // Process default: honour the process preset the 3MF was prepared with
 // (preferredName) when it's available and not incompatible with the selected
 // printer; otherwise the first preset compatible with the printer in tier
@@ -98,7 +107,24 @@ function pickProcessDefault(
   printerName: string | null,
   compatIndex: PrinterCompatibilityIndex,
   preferredName?: string | null,
+  printerModels?: PrinterModelMap,
 ): PresetRef | null {
+  if (preferredName && printerName) {
+    const mappedPreferred = appendBblPrinterTag(
+      stripBblPrinterTag(preferredName),
+      printerName,
+      printerModels,
+    );
+    const matched = matchPresetByProfile(
+      flattenSlotPresets(by, 'process'),
+      mappedPreferred,
+      printerName,
+      printerModels,
+    );
+    if (matched && presetCompatibility(matched, 'process', printerName, compatIndex) !== 'mismatch') {
+      return { source: matched.source, id: matched.id };
+    }
+  }
   const preferred = findPresetByName(by, 'process', preferredName);
   if (preferred) {
     const p = findPreset(by, preferred, 'process');
@@ -406,6 +432,8 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // incompatible with high-temp filaments like ABS / ASA / PC, and the
   // user had no way to switch plates without cloning the preset.
   const [bedType, setBedType] = useState<string | null>(null);
+  const is3mfSource = source.filename.toLowerCase().endsWith('.3mf');
+  const [useProjectOverrides, setUseProjectOverrides] = useState(is3mfSource);
 
   const platesQuery = useQuery({
     queryKey: ['slicePlates', source.kind, source.id],
@@ -603,9 +631,15 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
           return current;
         }
       }
-      return pickProcessDefault(data, selectedPrinterName, compatIndex, embeddedProcess);
+      return pickProcessDefault(
+        data,
+        selectedPrinterName,
+        compatIndex,
+        embeddedProcess,
+        printerModelsQuery.data,
+      );
     });
-  }, [presetsQuery.data, selectedPrinterName, compatIndex, embeddedProcess]);
+  }, [presetsQuery.data, selectedPrinterName, compatIndex, embeddedProcess, printerModelsQuery.data]);
 
   // Filament pre-pick: prefer Spoolman profile when it maps to a Tier-1 preset,
   // else score by type/colour. Existing manual picks are kept when still compatible.
@@ -713,6 +747,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
         // Bed-type override (#1337) also flows through the bundle path —
         // the sidecar forwards `bedType` as --curr_bed_type to the CLI.
         ...(bedType != null ? { bed_type: bedType } : {}),
+        ...(is3mfSource ? { use_project_overrides: useProjectOverrides } : {}),
       };
     }
     if (
@@ -730,8 +765,25 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
       filament_presets: filamentPresets as PresetRef[],
       ...(plate != null ? { plate } : {}),
       ...(bedType != null ? { bed_type: bedType } : {}),
+      ...(is3mfSource ? { use_project_overrides: useProjectOverrides } : {}),
     };
   }
+
+  const mappedProcessLabel = useMemo(() => {
+    if (!useProjectOverrides || !embeddedProcess || !selectedPrinterName) return null;
+    const mapped = appendBblPrinterTag(
+      stripBblPrinterTag(embeddedProcess),
+      selectedPrinterName,
+      printerModelsQuery.data,
+    );
+    if (mapped.trim().toLowerCase() === embeddedProcess.trim().toLowerCase()) return null;
+    return mapped;
+  }, [
+    useProjectOverrides,
+    embeddedProcess,
+    selectedPrinterName,
+    printerModelsQuery.data,
+  ]);
 
 
   // Slice button stays disabled until the preview slice / embedded-metadata
@@ -905,6 +957,39 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                     disabled={isEnqueuing}
                   />
                 </>
+              )}
+              {is3mfSource && (
+                <div className="space-y-1">
+                  <label className="flex items-start gap-2 text-sm text-bambu-gray cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 rounded border-bambu-dark-tertiary"
+                      checked={useProjectOverrides}
+                      onChange={(e) => setUseProjectOverrides(e.target.checked)}
+                      disabled={isEnqueuing}
+                    />
+                    <span>
+                      <span className="text-white block">
+                        {t('slice.projectOverrides.label', 'Use 3MF process overrides')}
+                      </span>
+                      <span className="text-xs text-bambu-gray block mt-0.5">
+                        {t(
+                          'slice.projectOverrides.description',
+                          'Map embedded presets to the selected printer and apply support and other settings saved in the project file.',
+                        )}
+                      </span>
+                    </span>
+                  </label>
+                  {mappedProcessLabel && embeddedProcess && (
+                    <p className="text-xs text-bambu-gray pl-6">
+                      {t('slice.projectOverrides.mappedProcessHint', {
+                        from: embeddedProcess,
+                        to: mappedProcessLabel,
+                        defaultValue: 'Process: {{from}} → {{to}}',
+                      })}
+                    </p>
+                  )}
+                </div>
               )}
               {/* Bed-type override (#1337). Always visible, always enabled.
                   In non-bundle mode the backend patches curr_bed_type on the

@@ -133,6 +133,14 @@ class SliceRequest(BaseModel):
             "process preset unchanged (#1337)."
         ),
     )
+    use_project_overrides: bool = Field(
+        default=True,
+        description=(
+            "For 3MF inputs: map embedded preset names to the target printer and merge "
+            "project_settings process overrides onto the resolved process preset. "
+            "Ignored for STL and when false."
+        ),
+    )
 
     @model_validator(mode="after")
     def normalise_preset_refs(self) -> "SliceRequest":
@@ -197,6 +205,7 @@ class SliceResponse(BaseModel):
     filament_used_g: float
     filament_used_mm: float
     used_embedded_settings: bool = False
+    used_project_overrides: bool = False
 
 
 class SliceArchiveResponse(BaseModel):
@@ -210,3 +219,4 @@ class SliceArchiveResponse(BaseModel):
     filament_used_g: float
     filament_used_mm: float
     used_embedded_settings: bool = False
+    used_project_overrides: bool = False

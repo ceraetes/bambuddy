@@ -63,6 +63,11 @@ from backend.app.schemas.library import (
 )
 from backend.app.schemas.slicer import SliceRequest, SliceResponse
 from backend.app.services.archive import ThreeMFParser
+from backend.app.services.slicer_project_overrides import (
+    PROJECT_SETTINGS_SENTINEL_KEYS as _PROJECT_SETTINGS_SENTINEL_KEYS,
+    apply_project_overrides_to_presets,
+    map_bundle_spec_for_target,
+)
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
 from backend.app.utils.filename import InvalidFilenameError, validate_print_filename
 from backend.app.utils.threemf_tools import (
@@ -2993,18 +2998,6 @@ def _strip_3mf_embedded_settings(zip_bytes: bytes) -> bytes:
 #
 # Add new entries here as more reports surface — the slicer's error message
 # names the offending field directly (`<field>: -1 not in range [...]`).
-_PROJECT_SETTINGS_SENTINEL_KEYS = frozenset(
-    {
-        # Reported in #1201 (MakerWorld P2S 3MFs).
-        "raft_first_layer_expansion",
-        "tree_support_wall_count",
-        # Cited in the strip-experiment comment block above as a known sentinel
-        # case from earlier reports.
-        "prime_tower_brim_width",
-    }
-)
-
-
 def _sanitize_project_settings_sentinels(zip_bytes: bytes) -> bytes:
     """Strip ``"-1"`` inherit-from-parent sentinels from the 3MF's
     ``Metadata/project_settings.config`` so the slicer CLI's range validator
@@ -3120,8 +3113,8 @@ async def _run_slicer_with_fallback(
 ):
     """Validate presets, dispatch to the right sidecar, run the slicer with
     the auto-fallback for 3MF inputs whose `--load-settings` path crashes the
-    CLI. Returns ``(SliceResult, used_embedded_settings: bool)``. Raises
-    ``HTTPException`` for any caller-facing error.
+    CLI. Returns ``(SliceResult, used_embedded_settings, used_project_overrides)``.
+    Raises ``HTTPException`` for any caller-facing error.
 
     `current_user_id` is needed to resolve **cloud** presets — the cloud token
     is per-user when auth is enabled. For the legacy / local-only path it can
@@ -3149,18 +3142,24 @@ async def _run_slicer_with_fallback(
     # — the sidecar will materialise the per-category JSONs from the
     # bundle's extracted directory at slice time.
     use_bundle = request.bundle is not None
+    is_3mf = model_filename.lower().endswith(".3mf")
 
     user: User | None = None
+    if current_user_id is not None:
+        user = await db.get(User, current_user_id)
+
+    if use_bundle and is_3mf and request.use_project_overrides and request.bundle is not None:
+        target_label = await _resolve_target_printer_label(db, user, request)
+        request = request.model_copy(update={"bundle": map_bundle_spec_for_target(request.bundle, target_label)})
+
     presets: dict[str, str] = {}
     filament_jsons: list[str] = []
+    used_project_overrides = False
     if not use_bundle:
         # Resolve each slot via the source-aware resolver. The schema
         # validator has already normalised legacy `*_preset_id: int`
         # fields into `PresetRef(source='local', id=str(int))`, so all
         # three are guaranteed non-None here.
-        if current_user_id is not None:
-            user = await db.get(User, current_user_id)
-
         refs = {
             "printer": request.printer_preset,
             "process": request.process_preset,
@@ -3174,6 +3173,16 @@ async def _run_slicer_with_fallback(
         for ref in request.filament_presets:
             assert ref is not None, "schema validator guarantees filament list is non-None"
             filament_jsons.append(await resolve_preset_ref(db, user, ref, "filament"))
+
+        if is_3mf and request.use_project_overrides:
+            target_label = await _resolve_target_printer_label(db, user, request)
+            presets, used_project_overrides = await apply_project_overrides_to_presets(
+                db,
+                user,
+                model_bytes=model_bytes,
+                presets=presets,
+                target_printer_model=target_label,
+            )
 
         # Bed-type override (#1337): patch curr_bed_type onto the resolved
         # process JSON so the slicer's StaticPrintConfig pass picks up the
@@ -3219,7 +3228,6 @@ async def _run_slicer_with_fallback(
     # Forwarding the original bytes lets --load-settings override the
     # specific fields the user changed (printer/process/filament) while
     # the embedded plate / model definitions remain intact.
-    is_3mf = model_filename.lower().endswith(".3mf")
     primary_bytes = model_bytes
     if is_3mf:
         # Strip "-1" inherit-from-parent sentinels from
@@ -3497,7 +3505,7 @@ async def _run_slicer_with_fallback(
     finally:
         await service.close()
 
-    return result, used_embedded_settings
+    return result, used_embedded_settings, used_project_overrides
 
 
 def _canonical_printer_model(raw: str | None) -> str | None:
@@ -3539,6 +3547,25 @@ async def _resolve_target_printer_model(db: AsyncSession, user: User | None, req
         return _canonical_printer_model(
             data.get("printer_model") or data.get("printer_settings_id") or data.get("name")
         )
+    except Exception:
+        return None
+
+
+async def _resolve_target_printer_label(db: AsyncSession, user: User | None, request: SliceRequest) -> str | None:
+    """Printer preset display name / model string for ``@BBL`` preset remapping."""
+    from backend.app.services.preset_resolver import resolve_preset_ref
+
+    if request.bundle is not None:
+        return request.bundle.printer_name
+    if request.printer_preset is None:
+        return None
+    try:
+        printer_json = await resolve_preset_ref(db, user, request.printer_preset, "printer")
+        data = json.loads(printer_json)
+        if not isinstance(data, dict):
+            return None
+        raw = data.get("name") or data.get("printer_settings_id") or data.get("printer_model")
+        return str(raw).strip() if raw else None
     except Exception:
         return None
 
@@ -3589,7 +3616,7 @@ async def slice_and_persist(
 
     library_request = request.model_copy(update={"export_3mf": True})
 
-    result, used_embedded_settings = await _run_slicer_with_fallback(
+    result, used_embedded_settings, used_project_overrides = await _run_slicer_with_fallback(
         db,
         model_bytes=model_bytes,
         model_filename=model_filename,
@@ -3644,6 +3671,8 @@ async def slice_and_persist(
     )
     if used_embedded_settings:
         metadata["used_embedded_settings"] = True
+    if used_project_overrides:
+        metadata["used_project_overrides"] = True
     if extra_metadata:
         metadata.update(extra_metadata)
 
@@ -3676,6 +3705,7 @@ async def slice_and_persist(
         filament_used_g=filament_g,
         filament_used_mm=filament_mm,
         used_embedded_settings=used_embedded_settings,
+        used_project_overrides=used_project_overrides,
     )
 
 
@@ -3703,7 +3733,7 @@ async def slice_and_persist_as_archive(
     # caller's `export_3mf` flag; here we override.
     archive_request = request.model_copy(update={"export_3mf": True})
 
-    result, used_embedded_settings = await _run_slicer_with_fallback(
+    result, used_embedded_settings, used_project_overrides = await _run_slicer_with_fallback(
         db,
         model_bytes=model_bytes,
         model_filename=model_filename,
@@ -3784,6 +3814,8 @@ async def slice_and_persist_as_archive(
     )
     if used_embedded_settings:
         metadata["used_embedded_settings"] = True
+    if used_project_overrides:
+        metadata["used_project_overrides"] = True
 
     # Prefer the actually-used filament list from the sliced output's
     # slice_info.config (parsed_metadata.filament_* — only entries with
@@ -3858,6 +3890,7 @@ async def slice_and_persist_as_archive(
         filament_used_g=filament_g,
         filament_used_mm=filament_mm,
         used_embedded_settings=used_embedded_settings,
+        used_project_overrides=used_project_overrides,
     )
 
 

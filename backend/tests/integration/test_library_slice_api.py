@@ -317,6 +317,70 @@ class TestSliceLibraryFile:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_3mf_project_overrides_merge_into_process_profile(
+        self, async_client: AsyncClient, db_session, slice_test_setup
+    ):
+        """Embedded project_settings overrides are merged into presetProfile."""
+        process = await db_session.get(LocalPreset, slice_test_setup["process_id"])
+        assert process is not None
+        process.setting = json.dumps(
+            {"name": "Test process", "type": "process", "enable_support": "0", "layer_height": "0.2"}
+        )
+        await db_session.commit()
+
+        src_3mf_path = slice_test_setup["tmp_path"] / "library" / "files" / "overrides.3mf"
+        src_3mf_path.write_bytes(
+            _make_3mf_with_settings(
+                {
+                    "print_settings_id": "Test process",
+                    "printer_settings_id": "Test printer",
+                    "enable_support": "1",
+                    "layer_height": "0.2",
+                }
+            )
+        )
+        threemf = LibraryFile(
+            filename="overrides.3mf",
+            file_path=str(src_3mf_path.relative_to(slice_test_setup["tmp_path"])),
+            file_type="3mf",
+            file_size=src_3mf_path.stat().st_size,
+        )
+        db_session.add(threemf)
+        await db_session.commit()
+        await db_session.refresh(threemf)
+
+        captured: dict = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = bytes(request.content)
+            return httpx.Response(
+                status_code=200,
+                content=b"PK\x03\x04 fake-3mf",
+                headers={
+                    "x-print-time-seconds": "10",
+                    "x-filament-used-g": "0.1",
+                    "x-filament-used-mm": "1.0",
+                },
+            )
+
+        _install_mock_sidecar(handler)
+        response = await async_client.post(
+            f"/api/v1/library/files/{threemf.id}/slice",
+            json={
+                "printer_preset_id": slice_test_setup["printer_id"],
+                "process_preset_id": slice_test_setup["process_id"],
+                "filament_preset_id": slice_test_setup["filament_id"],
+                "use_project_overrides": True,
+            },
+        )
+        assert response.status_code == 202
+        final = await _wait_for_job(async_client, response.json()["job_id"])
+        assert final["status"] == "completed", final
+        assert final["result"].get("used_project_overrides") is True
+        assert b'"enable_support": "1"' in captured["body"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_invalid_preset_id_surfaces_as_failed_job_with_status_400(
         self, async_client: AsyncClient, slice_test_setup
     ):

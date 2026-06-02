@@ -3567,6 +3567,12 @@ export default {
       texturedPEI: 'Textured PEI Plate',
       smoothPEI: 'Smooth PEI Plate',
     },
+    projectOverrides: {
+      label: 'Use 3MF process overrides',
+      description:
+        'Map embedded presets to the selected printer and apply support and other settings saved in the project file.',
+      mappedProcessHint: 'Process: {{from}} → {{to}}',
+    },
   },
 
   // Spoolman

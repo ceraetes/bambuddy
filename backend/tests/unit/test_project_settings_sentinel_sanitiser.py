@@ -33,9 +33,9 @@ import zipfile
 
 import pytest
 
-from backend.app.api.routes.library import (
-    _PROJECT_SETTINGS_SENTINEL_KEYS,
-    _sanitize_project_settings_sentinels,
+from backend.app.api.routes.library import _sanitize_project_settings_sentinels
+from backend.app.services.slicer_project_overrides import (
+    PROJECT_SETTINGS_SENTINEL_KEYS as _PROJECT_SETTINGS_SENTINEL_KEYS,
 )
 
 
