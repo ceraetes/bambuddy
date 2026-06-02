@@ -1,13 +1,11 @@
 name: Integration build watch
 
-# Workflows on ceraetes/ci cannot see pushes to feature branches directly. This job
-# polls integration branch SHAs and starts a build when anything changed.
+# Polls integration branch SHAs on ceraetes/ci and starts the integration build
+# via workflow_call when anything changed.
 on:
   schedule:
     - cron: '*/10 * * * *'
   workflow_dispatch:
-  repository_dispatch:
-    types: [integration-rebuild]
   push:
     branches:
       - ceraetes/ci
@@ -19,10 +17,6 @@ on:
       - '.github/scripts/integration-branches.sh'
       - '.github/scripts/integration-merge.sh'
 
-permissions:
-  contents: read
-  actions: write
-
 concurrency:
   group: integration-build-watch
   cancel-in-progress: true
@@ -31,6 +25,8 @@ jobs:
   check:
     name: Detect integration branch changes
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.compare.outputs.changed }}
     steps:
       - name: Checkout ceraetes/ci
         uses: actions/checkout@v4
@@ -58,14 +54,15 @@ jobs:
             echo "Integration inputs changed — will trigger build."
           fi
 
-      - name: Trigger integration build
-        if: steps.compare.outputs.changed == 'true' || github.event_name == 'repository_dispatch'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh workflow run build-integration-dev.yml --ref ceraetes/ci \
-            -f reason="${{ github.event_name }}"
-
       - name: Up to date
-        if: steps.compare.outputs.changed != 'true' && github.event_name != 'repository_dispatch'
+        if: steps.compare.outputs.changed != 'true'
         run: echo "Integration fingerprint unchanged."
+
+  integration-build:
+    name: Build integration dev image
+    needs: check
+    if: needs.check.outputs.changed == 'true'
+    uses: ./.github/workflows/build-integration-dev.yml
+    secrets: inherit
+    with:
+      reason: watch

@@ -18,6 +18,8 @@ jobs:
   sync:
     name: Merge upstream dev when maziggy daily changes
     runs-on: ubuntu-latest
+    outputs:
+      trigger_integration: ${{ steps.integration_gate.outputs.trigger }}
     steps:
       - name: Checkout ceraetes/ci
         uses: actions/checkout@v4
@@ -127,12 +129,25 @@ jobs:
           git diff --staged --quiet || git commit -m "chore: sync upstream daily (${{ steps.upstream.outputs.short }})"
           git push origin ceraetes/ci
 
-      - name: Trigger integration build
-        if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.status == 'clean'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run build-integration-dev.yml --ref ceraetes/ci
+      - name: Decide integration build
+        id: integration_gate
+        if: always()
+        run: |
+          if [ "${{ steps.compare.outputs.changed }}" = "true" ] && [ "${{ steps.merge.outputs.status }}" = "clean" ]; then
+            echo "trigger=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "trigger=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Fail job after merge conflict
         if: steps.compare.outputs.changed == 'true' && steps.merge.outputs.status == 'conflict'
         run: exit 1
+
+  integration-build:
+    name: Build integration dev image
+    needs: sync
+    if: needs.sync.outputs.trigger_integration == 'true'
+    uses: ./.github/workflows/build-integration-dev.yml
+    secrets: inherit
+    with:
+      reason: upstream-daily-sync

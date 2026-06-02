@@ -5,9 +5,9 @@ GitHub Actions live on branch **`ceraetes/ci`** (fork default branch). Branch **
 | Workflow | Trigger | Effect |
 |----------|---------|--------|
 | `sync-upstream-daily.yml` | Hourly + manual | When `ghcr.io/maziggy/bambuddy:daily` digest changes, merge `maziggy/bambuddy` `dev` into this fork's `dev`, update digest on `ceraetes/ci`, trigger integration build |
-| `integration-build-watch.yml` | Every 10 min, `ceraetes/ci` config push, `repository_dispatch` | Compares SHAs of `dev` + integration branches; starts build when anything changed |
-| `trigger-integration-build.yml` | Push on branches that contain this file | Dispatches integration build immediately (must exist on the feature branch) |
-| `build-integration-dev.yml` | Manual, watch/trigger/sync dispatch | Merge `origin/dev` + branches in `.github/integration-branches` (in order), build and push `ghcr.io/ceraetes/bambuddy:dev` |
+| `integration-build-watch.yml` | Every 10 min, `ceraetes/ci` config push | Compares SHAs of `dev` + integration branches; calls integration build when changed |
+| `trigger-integration-build.yml` | Push on branches that contain this file | Ping workflow; `workflow_run` on `ceraetes/ci` starts the integration build |
+| `build-integration-dev.yml` | Manual, `workflow_run`, `workflow_call`, `ceraetes/ci` push | Merge `origin/dev` + branches in `.github/integration-branches` (in order), build and push `ghcr.io/ceraetes/bambuddy:dev` |
 | `build-dev-image.yml` | Manual only (deprecated) | Redirects — use integration workflow |
 
 The [homeassistant-app-bambuddy](https://github.com/ceraetes/homeassistant-app-bambuddy) repo bumps the HA add-on when `:dev` changes.
@@ -34,9 +34,9 @@ After adding a branch:
 1. Push the updated `integration-branches` on `ceraetes/ci`.
 2. Copy [`.github/workflows/trigger-integration-build.yml`](workflows/trigger-integration-build.yml) onto the new feature branch and push (for instant rebuilds on every push). Without it, the watch workflow rebuilds within ~10 minutes.
 
-## Why feature pushes did not rebuild before
+## Why feature pushes use a ping workflow
 
-GitHub only runs workflows that exist **on the branch that was pushed**. `build-integration-dev.yml` lives on `ceraetes/ci`, so pushes to `feature/*` did not start it unless a small trigger workflow was also on that branch.
+GitHub only runs workflows that exist **on the branch that was pushed**. `build-integration-dev.yml` lives on `ceraetes/ci`. Feature branches carry a small **Trigger integration build** workflow that completes successfully; `build-integration-dev.yml` listens via `workflow_run` on the default branch. (`GITHUB_TOKEN` cannot call `workflow_dispatch` on another workflow.)
 
 ## One-time setup
 

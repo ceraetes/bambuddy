@@ -7,6 +7,16 @@ on:
         description: Why this build was started
         required: false
         default: manual
+  workflow_run:
+    workflows: [Trigger integration build]
+    types: [completed]
+  workflow_call:
+    inputs:
+      reason:
+        description: Why this build was started
+        type: string
+        required: false
+        default: ''
   push:
     branches:
       - ceraetes/ci
@@ -27,6 +37,9 @@ concurrency:
 jobs:
   build-push:
     name: Merge dev + features, push ghcr.io/ceraetes/bambuddy:dev
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout ceraetes/ci
@@ -119,7 +132,7 @@ jobs:
         if: success()
         run: |
           echo "Integration SHA: ${{ steps.merge.outputs.sha }}"
-          echo "Triggered by: ${{ inputs.reason }}"
+          echo "Triggered by: ${{ inputs.reason || format('push:{0}', github.event.workflow_run.head_branch) || github.event_name }}"
           echo "Pushed digest: ${{ steps.build.outputs.digest }}"
           if [ -z "${{ steps.build.outputs.digest }}" ]; then
             echo "ERROR: Build step did not produce a digest"
