@@ -13,6 +13,7 @@ on:
     paths:
       - '.github/workflows/build-integration-dev.yml'
       - '.github/scripts/integration-branches.sh'
+      - '.github/scripts/integration-merge.sh'
 
 permissions:
   contents: write
@@ -37,7 +38,7 @@ jobs:
 
       - name: Fetch branches
         run: |
-          chmod +x .github/scripts/integration-branches.sh
+          chmod +x .github/scripts/integration-branches.sh .github/scripts/integration-merge.sh
           git fetch origin dev
           while IFS= read -r b; do
             [ -n "$b" ] || continue
@@ -50,19 +51,19 @@ jobs:
       - name: Merge dev and integration branches
         id: merge
         run: |
-          git checkout -B integration-build origin/dev
-          while IFS= read -r b; do
-            [ -n "$b" ] || continue
-            echo "Merging origin/$b ..."
-            if ! git merge "origin/$b" --no-edit; then
-              git diff --name-only --diff-filter=U > /tmp/conflict-files.txt || true
-              git merge --abort 2>/dev/null || true
-              echo "status=conflict" >> "$GITHUB_OUTPUT"
-              exit 1
-            fi
-          done < <(.github/scripts/integration-branches.sh list)
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          set +e
+          merge_out=$(.github/scripts/integration-merge.sh 2>&1)
+          merge_rc=$?
+          set -e
+          echo "$merge_out"
+          if [ "$merge_rc" -ne 0 ]; then
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
           echo "status=clean" >> "$GITHUB_OUTPUT"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(echo "$merge_out" | grep '^sha=' | cut -d= -f2-)" >> "$GITHUB_OUTPUT"
 
       - name: Open issue on merge conflict
         if: failure() && steps.merge.outputs.status == 'conflict'

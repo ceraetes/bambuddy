@@ -17,6 +17,7 @@ on:
       - '.github/workflows/integration-build-watch.yml'
       - '.github/workflows/build-integration-dev.yml'
       - '.github/scripts/integration-branches.sh'
+      - '.github/scripts/integration-merge.sh'
 
 permissions:
   contents: read
