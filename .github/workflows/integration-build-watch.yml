@@ -41,8 +41,8 @@ jobs:
       - name: Compare integration fingerprint
         id: compare
         run: |
-          chmod +x .github/scripts/integration-branches.sh
-          CURRENT=$(.github/scripts/integration-branches.sh fingerprint)
+          git config core.fileMode false
+          CURRENT=$(bash .github/scripts/integration-branches.sh fingerprint)
           STORED=""
           if [ -f .github/integration-build-fingerprint ]; then
             STORED=$(tr -d '[:space:]' < .github/integration-build-fingerprint)
