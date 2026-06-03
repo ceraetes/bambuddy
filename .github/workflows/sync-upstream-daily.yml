@@ -147,6 +147,10 @@ jobs:
     name: Build integration dev image
     needs: sync
     if: needs.sync.outputs.trigger_integration == 'true'
+    permissions:
+      contents: write
+      packages: write
+      issues: write
     uses: ./.github/workflows/build-integration-dev.yml
     secrets: inherit
     with:
