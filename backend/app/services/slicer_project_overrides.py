@@ -63,6 +63,7 @@ _PROCESS_HINT_KEYS = frozenset(
         "prime_tower_width",
         "prime_tower_max_speed",
         "prime_tower_rib_wall",
+        "prime_tower_infill_gap",
         "outer_wall_speed",
         "inner_wall_speed",
         "interlocking_depth",
@@ -170,7 +171,7 @@ def process_keys_from_project_settings(project_settings: dict) -> dict[str, str]
     """Extract process-class keys from project_settings with scalar string values."""
     out: dict[str, str] = {}
     for key, raw in project_settings.items():
-        if classify_settings_key(key) not in ("process", "unknown"):
+        if classify_settings_key(key) != "process":
             continue
         flat = _flatten_setting_value(raw)
         if flat is not None:
@@ -185,13 +186,153 @@ def _preset_dict_from_json(preset_json: str) -> dict[str, str]:
         return {}
     if not isinstance(data, dict):
         return {}
-    return {k: str(v) for k, v in data.items() if v is not None}
+    out: dict[str, str] = {}
+    for key, raw in data.items():
+        flat = _flatten_setting_value(raw)
+        if flat is not None:
+            out[key] = flat
+    return out
+
+
+def _normalize_setting_value_for_compare(value: str) -> str:
+    """Normalize project / preset strings so equivalent slicer values compare equal."""
+    s = value.strip()
+    if not s:
+        return s
+    if s.startswith("[") and s.endswith("]"):
+        try:
+            parsed = json.loads(s.replace("'", '"'))
+            if isinstance(parsed, list) and parsed:
+                s = str(parsed[0]).strip()
+        except (json.JSONDecodeError, ValueError, TypeError):
+            inner = s[1:-1].strip().strip("'\"")
+            if inner:
+                s = inner.split(",")[0].strip().strip("'\"")
+    lower = s.lower()
+    if lower in ("true", "1", "yes", "on"):
+        return "1"
+    if lower in ("false", "0", "no", "off"):
+        return "0"
+    if s.endswith("%"):
+        try:
+            return str(float(s[:-1].strip()))
+        except ValueError:
+            return lower
+    try:
+        num = float(s)
+        if num.is_integer():
+            return str(int(num))
+        return str(num)
+    except ValueError:
+        return lower
 
 
 def _values_differ(project_val: str, preset_val: str | None) -> bool:
     if preset_val is None:
         return True
-    return project_val.strip() != preset_val.strip()
+    return _normalize_setting_value_for_compare(project_val) != _normalize_setting_value_for_compare(preset_val)
+
+
+def _needs_inheritance_materialization(data: dict) -> bool:
+    """True when preset JSON is a sidecar/system stub, not a flattened profile."""
+    if not isinstance(data, dict):
+        return False
+    if data.get("from") == "system" and data.get("inherits"):
+        return True
+    return bool(data.get("inherits") and len(data) < 25)
+
+
+async def _fetch_merged_process_profile_from_github(name: str) -> dict | None:
+    """Materialize a stock process preset without DB (Orca BBL GitHub mirror)."""
+    import httpx
+
+    from backend.app.services.orca_profiles import MAX_INHERITANCE_DEPTH, ORCA_BASE_URL
+
+    async def fetch_profile(profile_name: str) -> dict | None:
+        url = f"{ORCA_BASE_URL}/process/{profile_name}.json"
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    body = resp.json()
+                    return body if isinstance(body, dict) else None
+            except Exception as exc:
+                logger.debug("GitHub process preset fetch failed for %r: %s", profile_name, exc)
+        return None
+
+    async def merge(data: dict, depth: int = 0) -> dict:
+        if depth >= MAX_INHERITANCE_DEPTH:
+            return data
+        inherits = data.get("inherits")
+        if not inherits or not isinstance(inherits, str):
+            return data
+        base = await fetch_profile(inherits)
+        if base is None:
+            return data
+        resolved = await merge(base, depth + 1)
+        return {**resolved, **data}
+
+    root = await fetch_profile(name)
+    if root is None:
+        return None
+    return await merge(root)
+
+
+async def _materialize_process_baseline_json(db: AsyncSession, preset_json: str) -> str:
+    """Flatten inherited stock presets so override diffs match Bambu Studio's orange keys."""
+    try:
+        data = json.loads(preset_json)
+    except json.JSONDecodeError:
+        return preset_json
+    if not isinstance(data, dict) or not _needs_inheritance_materialization(data):
+        return preset_json
+    merged: dict | None = None
+    from backend.app.services.orca_profiles import resolve_preset
+
+    try:
+        merged = await resolve_preset(data, "process", db)
+    except Exception as exc:
+        logger.warning("Could not materialize inherited process baseline via DB: %s", exc)
+    if merged is None or _needs_inheritance_materialization(merged):
+        profile_name = str(data.get("inherits") or data.get("name") or "").strip()
+        if profile_name:
+            merged = await _fetch_merged_process_profile_from_github(profile_name)
+    if merged is None:
+        return preset_json
+    return json.dumps(merged)
+
+
+async def _resolve_embedded_source_process_json(
+    db: AsyncSession,
+    user: User | None,
+    source_process_name: str | None,
+) -> str | None:
+    if not source_process_name:
+        return None
+    raw_json: str | None = None
+    source_ref = await resolve_preset_ref_by_name(db, user, "process", source_process_name)
+    if source_ref is not None:
+        try:
+            raw_json = await resolve_preset_ref(db, user, source_ref, "process")
+        except Exception as exc:
+            logger.warning("Could not resolve source process preset %r: %s", source_process_name, exc)
+    if raw_json is None:
+        raw_json = json.dumps(
+            {
+                "name": source_process_name,
+                "inherits": source_process_name,
+                "from": "system",
+                "type": "process",
+            }
+        )
+    materialized = await _materialize_process_baseline_json(db, raw_json)
+    try:
+        data = json.loads(materialized)
+    except json.JSONDecodeError:
+        return None
+    if _needs_inheritance_materialization(data):
+        return None
+    return materialized
 
 
 def compute_process_overrides(
@@ -208,12 +349,8 @@ def compute_process_overrides(
     """
     if source_process_json:
         baseline_json = source_process_json
-        restrict_to_process_keys = False
     else:
         baseline_json = target_process_json
-        # Without the stock preset, ignore unclassified keys — they are usually
-        # the entire embedded profile, not discrete user tweaks.
-        restrict_to_process_keys = True
 
     baseline_flat = _preset_dict_from_json(baseline_json) if baseline_json else {}
     baseline_resolved = bool(baseline_json)
@@ -224,12 +361,19 @@ def compute_process_overrides(
             continue
         if project_val == "-1":
             continue
-        if classify_settings_key(key) in ("identity", "printer", "filament"):
+        if classify_settings_key(key) != "process":
             continue
-        if restrict_to_process_keys and classify_settings_key(key) != "process":
-            continue
-        if baseline_resolved and not _values_differ(project_val, baseline_flat.get(key)):
-            continue
+        baseline_val = baseline_flat.get(key)
+        if baseline_resolved:
+            if baseline_val is None:
+                # Project-only keys (not in the stock preset JSON) count as
+                # overrides only when they're known process settings — avoids
+                # listing hundreds of serialized defaults from project_settings.
+                if key in _PROCESS_HINT_KEYS:
+                    overrides[key] = project_val
+                continue
+            if not _values_differ(project_val, baseline_val):
+                continue
         overrides[key] = project_val
     return overrides
 
@@ -356,14 +500,7 @@ async def preview_project_process_overrides(
     project_process = process_keys_from_project_settings(project_settings)
 
     source_process_name = embedded.get("process")
-    source_process_json: str | None = None
-    if source_process_name:
-        source_ref = await resolve_preset_ref_by_name(db, user, "process", source_process_name)
-        if source_ref is not None:
-            try:
-                source_process_json = await resolve_preset_ref(db, user, source_ref, "process")
-            except Exception as exc:
-                logger.warning("Could not resolve source process preset %r: %s", source_process_name, exc)
+    source_process_json = await _resolve_embedded_source_process_json(db, user, source_process_name)
 
     overrides = compute_process_overrides(
         project_process,
@@ -402,14 +539,7 @@ async def apply_project_overrides_to_presets(
     project_process = process_keys_from_project_settings(project_settings)
 
     source_process_name = embedded.get("process")
-    source_process_json: str | None = None
-    if source_process_name:
-        source_ref = await resolve_preset_ref_by_name(db, user, "process", source_process_name)
-        if source_ref is not None:
-            try:
-                source_process_json = await resolve_preset_ref(db, user, source_ref, "process")
-            except Exception as exc:
-                logger.warning("Could not resolve source process preset %r: %s", source_process_name, exc)
+    source_process_json = await _resolve_embedded_source_process_json(db, user, source_process_name)
 
     target_process_json = presets.get("process", "")
     overrides = compute_process_overrides(

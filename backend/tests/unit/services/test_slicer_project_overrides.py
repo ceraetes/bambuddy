@@ -9,6 +9,8 @@ import zipfile
 import pytest
 
 from backend.app.services.slicer_project_overrides import (
+    _normalize_setting_value_for_compare,
+    _values_differ,
     compute_process_overrides,
     map_embedded_preset_name,
     merge_preset_json,
@@ -69,12 +71,59 @@ class TestComputeProcessOverrides:
         assert "custom_bambu_field" not in overrides
         assert "layer_height" not in overrides
 
-    def test_unknown_keys_skipped_without_source_or_target_baseline(self):
+    def test_unknown_keys_excluded_from_project_process(self):
         project = process_keys_from_project_settings(
-            {"enable_support": "1", "some_opaque_profile_key": "42"}
+            {
+                "enable_support": "1",
+                "some_opaque_profile_key": "42",
+                "0.20mm Standard @BBL A1": "ignored",
+            }
         )
-        overrides = compute_process_overrides(project, None, target_process_json=None)
-        assert overrides == {"enable_support": "1"}
+        assert "enable_support" in project
+        assert "some_opaque_profile_key" not in project
+
+    def test_values_normalize_list_vs_scalar(self):
+        assert not _values_differ("250", "['250']")
+        assert not _values_differ("15%", "15%")
+        assert _values_differ("1", "0")
+        assert _normalize_setting_value_for_compare("true") == "1"
+
+    def test_only_differs_from_materialized_baseline(self):
+        source = json.dumps(
+            {
+                "enable_support": "0",
+                "layer_height": "0.2",
+                "sparse_infill_pattern": "grid",
+                "gap_infill_speed": "['250']",
+                "type": "process",
+            }
+        )
+        project = process_keys_from_project_settings(
+            {
+                "enable_support": "1",
+                "layer_height": "0.2",
+                "sparse_infill_pattern": "crosshatch",
+                "gap_infill_speed": "250",
+                "printer_model": "ignored",
+            }
+        )
+        overrides = compute_process_overrides(project, source)
+        assert overrides == {
+            "enable_support": "1",
+            "sparse_infill_pattern": "crosshatch",
+        }
+
+    def test_project_only_process_keys_are_overrides(self):
+        source = json.dumps({"enable_support": "0", "type": "process"})
+        project = process_keys_from_project_settings(
+            {
+                "enable_support": "0",
+                "prime_tower_infill_gap": "100%",
+                "wall_transition_angle": "10",
+            }
+        )
+        overrides = compute_process_overrides(project, source)
+        assert overrides == {"prime_tower_infill_gap": "100%"}
 
 
 class TestMergePresetJson:
