@@ -67,6 +67,7 @@ from backend.app.services.slicer_project_overrides import (
     PROJECT_SETTINGS_SENTINEL_KEYS as _PROJECT_SETTINGS_SENTINEL_KEYS,
     apply_project_overrides_to_presets,
     map_bundle_spec_for_target,
+    preview_project_process_overrides,
 )
 from backend.app.services.stl_thumbnail import MIN_USABLE_STL_BYTES, generate_stl_thumbnail
 from backend.app.utils.filename import InvalidFilenameError, validate_print_filename
@@ -2371,7 +2372,7 @@ async def add_files_to_queue(
 async def get_library_file_plates(
     file_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
+    current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_READ)),
 ):
     """Get available plates from a multi-plate 3MF library file.
 
@@ -2628,6 +2629,16 @@ async def get_library_file_plates(
     except Exception as e:
         logger.warning("Failed to parse plates from library file %s: %s", file_id, e)
 
+    project_process_overrides: list[dict[str, str]] = []
+    try:
+        project_process_overrides = await preview_project_process_overrides(
+            db,
+            current_user,
+            model_bytes=file_path.read_bytes(),
+        )
+    except Exception as exc:
+        logger.warning("Failed to preview project process overrides for library file %s: %s", file_id, exc)
+
     return {
         "file_id": file_id,
         "filename": lib_file.filename,
@@ -2635,6 +2646,7 @@ async def get_library_file_plates(
         "is_multi_plate": len(plates) > 1,
         "embedded_printer": embedded_presets["printer"],
         "embedded_process": embedded_presets["process"],
+        "project_process_overrides": project_process_overrides,
     }
 
 
@@ -3176,12 +3188,14 @@ async def _run_slicer_with_fallback(
 
         if is_3mf and request.use_project_overrides:
             target_label = await _resolve_target_printer_label(db, user, request)
+            disabled_keys = frozenset(request.disabled_project_override_keys)
             presets, used_project_overrides = await apply_project_overrides_to_presets(
                 db,
                 user,
                 model_bytes=model_bytes,
                 presets=presets,
                 target_printer_model=target_label,
+                disabled_override_keys=disabled_keys if disabled_keys else None,
             )
 
         # Bed-type override (#1337): patch curr_bed_type onto the resolved

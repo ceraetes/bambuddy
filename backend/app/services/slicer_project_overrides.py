@@ -341,6 +341,38 @@ def map_bundle_spec_for_target(
     )
 
 
+async def preview_project_process_overrides(
+    db: AsyncSession,
+    user: User | None,
+    *,
+    model_bytes: bytes,
+) -> list[dict[str, str]]:
+    """Return process-class keys in project_settings that differ from the embedded stock preset."""
+    project_settings = read_project_settings(model_bytes)
+    if not project_settings:
+        return []
+
+    embedded = embedded_preset_names_from_project_settings(project_settings)
+    project_process = process_keys_from_project_settings(project_settings)
+
+    source_process_name = embedded.get("process")
+    source_process_json: str | None = None
+    if source_process_name:
+        source_ref = await resolve_preset_ref_by_name(db, user, "process", source_process_name)
+        if source_ref is not None:
+            try:
+                source_process_json = await resolve_preset_ref(db, user, source_ref, "process")
+            except Exception as exc:
+                logger.warning("Could not resolve source process preset %r: %s", source_process_name, exc)
+
+    overrides = compute_process_overrides(
+        project_process,
+        source_process_json,
+        target_process_json=None,
+    )
+    return [{"key": key, "value": value} for key, value in sorted(overrides.items())]
+
+
 async def apply_project_overrides_to_presets(
     db: AsyncSession,
     user: User | None,
@@ -348,6 +380,7 @@ async def apply_project_overrides_to_presets(
     model_bytes: bytes,
     presets: dict[str, str],
     target_printer_model: str | None,
+    disabled_override_keys: frozenset[str] | None = None,
 ) -> tuple[dict[str, str], bool]:
     """Merge embedded process overrides onto ``presets['process']``.
 
@@ -384,6 +417,8 @@ async def apply_project_overrides_to_presets(
         source_process_json,
         target_process_json=target_process_json if not source_process_json else None,
     )
+    if disabled_override_keys:
+        overrides = {k: v for k, v in overrides.items() if k not in disabled_override_keys}
     if not overrides:
         return presets, False
 

@@ -141,6 +141,13 @@ class SliceRequest(BaseModel):
             "Ignored for STL and when false."
         ),
     )
+    disabled_project_override_keys: list[str] = Field(
+        default_factory=list,
+        description=(
+            "For 3MF inputs with use_project_overrides: process_settings keys to skip "
+            "when merging project_settings onto the selected process preset."
+        ),
+    )
 
     @model_validator(mode="after")
     def normalise_preset_refs(self) -> "SliceRequest":

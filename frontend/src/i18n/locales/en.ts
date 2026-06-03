@@ -3587,6 +3587,9 @@ export default {
       description:
         'Apply support and other process tweaks saved in the project file onto the process preset you select (e.g. after switching printer).',
       mappedProcessHint: 'Process: {{from}} → {{to}}',
+      embeddedProcessLabel: '3MF process: {{name}}',
+      suggestedProcessMatch: 'Suggested match on this printer: {{name}}',
+      listSummary: '{{enabled}} of {{total}} overrides',
     },
   },
 

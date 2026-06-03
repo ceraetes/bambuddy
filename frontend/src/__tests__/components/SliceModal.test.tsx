@@ -1107,7 +1107,7 @@ describe('SliceModal', () => {
       // now reflect the bundle's process names.
       await waitFor(() => {
         expect(
-          screen.getByText('# 0.20mm Standard @BBL H2D'),
+          screen.getByDisplayValue('# 0.20mm Standard @BBL H2D'),
         ).toBeDefined();
       });
 
@@ -1119,7 +1119,9 @@ describe('SliceModal', () => {
 
       // Cloud/local/standard preset names from the original tier no longer
       // appear in the visible dropdowns (the bundle replaced them).
-      const visibleSelects = screen.getAllByRole('combobox') as HTMLSelectElement[];
+      const visibleSelects = screen.getAllByRole('combobox').filter(
+        (el) => el.tagName === 'SELECT',
+      ) as HTMLSelectElement[];
       const allOptionTexts = visibleSelects.flatMap((sel) =>
         Array.from(sel.options).map((o) => o.textContent ?? ''),
       );
@@ -1147,7 +1149,7 @@ describe('SliceModal', () => {
 
       // Wait for bundle-mode dropdowns to render.
       await waitFor(() =>
-        expect(screen.getByText('# 0.20mm Standard @BBL H2D')).toBeDefined(),
+        expect(screen.getByDisplayValue('# 0.20mm Standard @BBL H2D')).toBeDefined(),
       );
       await user.click(screen.getByRole('button', { name: /^Slice$/ }));
 
@@ -1186,7 +1188,7 @@ describe('SliceModal', () => {
       const bundleSelect = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
       await user.selectOptions(bundleSelect, sampleBundle.id);
       await waitFor(() =>
-        expect(screen.getByText('# 0.20mm Standard @BBL H2D')).toBeDefined(),
+        expect(screen.getByDisplayValue('# 0.20mm Standard @BBL H2D')).toBeDefined(),
       );
 
       // Flip back to None — triplet returns with local-tier auto-pick.
@@ -1397,6 +1399,132 @@ describe('SliceModal', () => {
     await waitFor(() => {
       expect(screen.getByRole('option', { name: 'Bambu PETG Basic' })).toBeDefined();
       expect(screen.queryByRole('option', { name: 'Bambu PLA Basic Black' })).toBeNull();
+    });
+  });
+
+  describe('3MF project overrides', () => {
+    it('shows the embedded 3MF process and override toggles', async () => {
+      mockApi.getLibraryFilePlates.mockResolvedValue({
+        file_id: 100,
+        filename: 'Helmet.3mf',
+        is_multi_plate: false,
+        embedded_printer: 'Bambu Lab X1 Carbon 0.4 nozzle',
+        embedded_process: '0.20mm Standard @BBL X1C',
+        project_process_overrides: [
+          { key: 'enable_support', value: '1' },
+          { key: 'support_type', value: 'tree(auto)' },
+        ],
+        plates: [
+          {
+            index: 1,
+            name: 'Plate 1',
+            objects: ['Helmet'],
+            has_thumbnail: false,
+            thumbnail_url: null,
+            print_time_seconds: null,
+            filament_used_grams: null,
+            filaments: [],
+          },
+        ],
+      });
+      mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+        file_id: 100,
+        filename: 'Helmet.3mf',
+        plate_id: 1,
+        filaments: [{ slot_id: 1, type: 'PLA', color: '#FFFFFF', used_grams: 80, used_meters: 27 }],
+      });
+      mockApi.getSlicerPresets.mockResolvedValue(makeUnified({
+        standard: {
+          printer: [
+            { id: 'Bambu Lab X1 Carbon 0.4 nozzle', name: 'Bambu Lab X1 Carbon 0.4 nozzle', source: 'standard' },
+            { id: 'Bambu Lab A1 mini 0.4 nozzle', name: 'Bambu Lab A1 mini 0.4 nozzle', source: 'standard' },
+          ],
+          process: [
+            { id: '0.20mm Standard @BBL X1C', name: '0.20mm Standard @BBL X1C', source: 'standard' },
+            { id: '0.20mm Standard @BBL A1 Mini', name: '0.20mm Standard @BBL A1 Mini', source: 'standard' },
+          ],
+          filament: [{ id: 'Bambu PLA Basic', name: 'Bambu PLA Basic', source: 'standard' }],
+        },
+      }));
+      mockApi.sliceLibraryFile.mockResolvedValue({
+        job_id: 50,
+        status: 'pending',
+        status_url: '/api/v1/slice-jobs/50',
+      });
+
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Helmet.3mf' },
+        onClose: vi.fn(),
+      });
+
+      await waitForPresetDisplay('Bambu Lab X1 Carbon 0.4 nozzle');
+      expect(screen.getByText(/Use 3MF process overrides/i)).toBeDefined();
+      expect(screen.getByText(/2 of 2 overrides/i)).toBeDefined();
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: /^Slice$/ }));
+
+      await waitFor(() => {
+        const [, body] = mockApi.sliceLibraryFile.mock.calls[0];
+        expect(body.use_project_overrides).toBe(true);
+        expect(body.disabled_project_override_keys).toBeUndefined();
+      });
+    });
+
+    it('re-picks the mapped process when the printer changes', async () => {
+      mockApi.getLibraryFilePlates.mockResolvedValue({
+        file_id: 100,
+        filename: 'Helmet.3mf',
+        is_multi_plate: false,
+        embedded_printer: 'Bambu Lab X1 Carbon 0.4 nozzle',
+        embedded_process: '0.20mm Standard @BBL X1C',
+        project_process_overrides: [],
+        plates: [
+          {
+            index: 1,
+            name: 'Plate 1',
+            objects: ['Helmet'],
+            has_thumbnail: false,
+            thumbnail_url: null,
+            print_time_seconds: null,
+            filament_used_grams: null,
+            filaments: [],
+          },
+        ],
+      });
+      mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+        file_id: 100,
+        filename: 'Helmet.3mf',
+        plate_id: 1,
+        filaments: [{ slot_id: 1, type: 'PLA', color: '#FFFFFF', used_grams: 80, used_meters: 27 }],
+      });
+      mockApi.getSlicerPresets.mockResolvedValue(makeUnified({
+        standard: {
+          printer: [
+            { id: 'Bambu Lab X1 Carbon 0.4 nozzle', name: 'Bambu Lab X1 Carbon 0.4 nozzle', source: 'standard' },
+            { id: 'Bambu Lab A1 mini 0.4 nozzle', name: 'Bambu Lab A1 mini 0.4 nozzle', source: 'standard' },
+          ],
+          process: [
+            { id: '0.20mm Standard @BBL X1C', name: '0.20mm Standard @BBL X1C', source: 'standard' },
+            { id: '0.20mm Standard @BBL A1 Mini', name: '0.20mm Standard @BBL A1 Mini', source: 'standard' },
+          ],
+          filament: [{ id: 'Bambu PLA Basic', name: 'Bambu PLA Basic', source: 'standard' }],
+        },
+      }));
+
+      renderWithTracker({
+        source: { kind: 'libraryFile', id: 100, filename: 'Helmet.3mf' },
+        onClose: vi.fn(),
+      });
+
+      await waitForPresetDisplay('Bambu Lab X1 Carbon 0.4 nozzle');
+      await waitForPresetDisplay('0.20mm Standard @BBL X1C');
+
+      const user = userEvent.setup();
+      await selectPresetByName(user, 0, 'Bambu Lab A1 mini 0.4 nozzle');
+
+      await waitForPresetDisplay('0.20mm Standard @BBL A1 Mini');
+      expect(screen.getByText(/Suggested match on this printer/i)).toBeDefined();
     });
   });
 });

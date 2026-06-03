@@ -1,5 +1,5 @@
 import { Cloud, CloudOff, Cog, Loader2, Package, RefreshCw, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -18,7 +18,7 @@ import {
 import { useSliceJobTracker } from '../contexts/SliceJobTrackerContext';
 import { useToast } from '../contexts/ToastContext';
 import { PlatePickerModal } from './PlatePickerModal';
-import type { PlateFilament } from '../types/plates';
+import type { PlateFilament, ProjectProcessOverride } from '../types/plates';
 import { normalizeColorForCompare, colorsAreSimilar } from '../utils/amsHelpers';
 import {
   presetCompatibility,
@@ -434,6 +434,9 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   const [bedType, setBedType] = useState<string | null>(null);
   const is3mfSource = source.filename.toLowerCase().endsWith('.3mf');
   const [useProjectOverrides, setUseProjectOverrides] = useState(is3mfSource);
+  const [disabledOverrideKeys, setDisabledOverrideKeys] = useState<Set<string>>(() => new Set());
+  const [processManuallyPicked, setProcessManuallyPicked] = useState(false);
+  const previousPrinterNameRef = useRef<string | null>(null);
 
   const platesQuery = useQuery({
     queryKey: ['slicePlates', source.kind, source.id],
@@ -603,6 +606,14 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   // it), so these are known by the time the pre-pick effects run.
   const embeddedPrinter = platesQuery.data?.embedded_printer ?? null;
   const embeddedProcess = platesQuery.data?.embedded_process ?? null;
+  const projectProcessOverrides = useMemo<ProjectProcessOverride[]>(
+    () => platesQuery.data?.project_process_overrides ?? [],
+    [platesQuery.data?.project_process_overrides],
+  );
+
+  useEffect(() => {
+    setDisabledOverrideKeys(new Set());
+  }, [projectProcessOverrides]);
 
   // When applying 3MF overrides, default the process to the embedded preset
   // remapped for the selected printer (e.g. A1 → A1 mini), not the raw @BBL tag.
@@ -665,6 +676,36 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     compatIndex,
     processPreferredName,
     printerModelsQuery.data,
+  ]);
+
+  // When the user switches printer on a 3MF, re-pick the closest process match
+  // for the embedded profile unless they already chose one manually.
+  useEffect(() => {
+    const data = presetsQuery.data;
+    if (!data || !selectedPrinterName) return;
+    const previousPrinter = previousPrinterNameRef.current;
+    previousPrinterNameRef.current = selectedPrinterName;
+    if (previousPrinter == null || previousPrinter === selectedPrinterName) return;
+    if (!is3mfSource || !useProjectOverrides || !embeddedProcess || processManuallyPicked) return;
+    setProcessPreset(
+      pickProcessDefault(
+        data,
+        selectedPrinterName,
+        compatIndex,
+        processPreferredName,
+        printerModelsQuery.data,
+      ),
+    );
+  }, [
+    presetsQuery.data,
+    selectedPrinterName,
+    compatIndex,
+    processPreferredName,
+    printerModelsQuery.data,
+    is3mfSource,
+    useProjectOverrides,
+    embeddedProcess,
+    processManuallyPicked,
   ]);
 
   // Filament pre-pick: prefer Spoolman profile when it maps to a Tier-1 preset,
@@ -748,6 +789,18 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     },
   });
 
+  function projectOverrideSliceFields(): Pick<SliceRequest, 'use_project_overrides' | 'disabled_project_override_keys'> {
+    if (!is3mfSource) return {};
+    const disabled =
+      useProjectOverrides && disabledOverrideKeys.size > 0
+        ? [...disabledOverrideKeys]
+        : undefined;
+    return {
+      use_project_overrides: useProjectOverrides,
+      ...(disabled ? { disabled_project_override_keys: disabled } : {}),
+    };
+  }
+
   // Body builder shared by the single-plate and slice-all paths. ``plate``
   // is the 1-indexed plate number to slice, or ``null`` for STL / single-
   // plate 3MF sources where the field is omitted entirely.
@@ -773,7 +826,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
         // Bed-type override (#1337) also flows through the bundle path —
         // the sidecar forwards `bedType` as --curr_bed_type to the CLI.
         ...(bedType != null ? { bed_type: bedType } : {}),
-        ...(is3mfSource ? { use_project_overrides: useProjectOverrides } : {}),
+        ...projectOverrideSliceFields(),
       };
     }
     if (
@@ -791,25 +844,24 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
       filament_presets: filamentPresets as PresetRef[],
       ...(plate != null ? { plate } : {}),
       ...(bedType != null ? { bed_type: bedType } : {}),
-      ...(is3mfSource ? { use_project_overrides: useProjectOverrides } : {}),
+      ...projectOverrideSliceFields(),
     };
   }
 
-  const mappedProcessLabel = useMemo(() => {
-    if (!useProjectOverrides || !embeddedProcess || !selectedPrinterName) return null;
-    const mapped = appendBblPrinterTag(
-      stripBblPrinterTag(embeddedProcess),
-      selectedPrinterName,
-      printerModelsQuery.data,
-    );
-    if (mapped.trim().toLowerCase() === embeddedProcess.trim().toLowerCase()) return null;
-    return mapped;
-  }, [
-    useProjectOverrides,
-    embeddedProcess,
-    selectedPrinterName,
-    printerModelsQuery.data,
-  ]);
+  const printerDiffersFromEmbedded = useMemo(() => {
+    if (!embeddedPrinter || !selectedPrinterName) return false;
+    const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+    return norm(embeddedPrinter) !== norm(selectedPrinterName);
+  }, [embeddedPrinter, selectedPrinterName]);
+
+  const showEmbeddedProcessHint =
+    is3mfSource && !isBundleMode && !!embeddedProcess && printerDiffersFromEmbedded;
+  const suggestedProcessMatch =
+    showEmbeddedProcessHint &&
+    processPreferredName &&
+    processPreferredName.trim().toLowerCase() !== embeddedProcess!.trim().toLowerCase()
+      ? processPreferredName
+      : null;
 
 
   // Slice button stays disabled until the preview slice / embedded-metadata
@@ -955,11 +1007,32 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                     slot="process"
                     data={presetsQuery.data}
                     value={processPreset}
-                    onChange={setProcessPreset}
+                    onChange={(ref) => {
+                      setProcessManuallyPicked(true);
+                      setProcessPreset(ref);
+                    }}
                     disabled={isEnqueuing}
                     selectedPrinterName={selectedPrinterName}
                     compatIndex={compatIndex}
                   />
+                  {showEmbeddedProcessHint && (
+                    <div className="rounded-md border border-bambu-dark-tertiary/50 bg-bambu-dark/30 px-3 py-2 -mt-2">
+                      <p className="text-xs text-bambu-gray">
+                        {t('slice.projectOverrides.embeddedProcessLabel', {
+                          defaultValue: '3MF process: {{name}}',
+                          name: embeddedProcess,
+                        })}
+                      </p>
+                      {suggestedProcessMatch && (
+                        <p className="text-xs text-bambu-gray mt-1">
+                          {t('slice.projectOverrides.suggestedProcessMatch', {
+                            defaultValue: 'Suggested match on this printer: {{name}}',
+                            name: suggestedProcessMatch,
+                          })}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
               {isBundleMode && selectedBundle && (
@@ -985,7 +1058,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                 </>
               )}
               {is3mfSource && (
-                <div className="space-y-1">
+                <div className="space-y-2">
                   <label className="flex items-start gap-2 text-sm text-bambu-gray cursor-pointer">
                     <input
                       type="checkbox"
@@ -1006,14 +1079,20 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
                       </span>
                     </span>
                   </label>
-                  {mappedProcessLabel && embeddedProcess && (
-                    <p className="text-xs text-bambu-gray pl-6">
-                      {t('slice.projectOverrides.mappedProcessHint', {
-                        from: embeddedProcess,
-                        to: mappedProcessLabel,
-                        defaultValue: 'Process: {{from}} → {{to}}',
-                      })}
-                    </p>
+                  {useProjectOverrides && projectProcessOverrides.length > 0 && (
+                    <ProjectOverridesPanel
+                      overrides={projectProcessOverrides}
+                      disabledKeys={disabledOverrideKeys}
+                      onToggle={(key, enabled) =>
+                        setDisabledOverrideKeys((current) => {
+                          const next = new Set(current);
+                          if (enabled) next.delete(key);
+                          else next.add(key);
+                          return next;
+                        })
+                      }
+                      disabled={isEnqueuing}
+                    />
                   )}
                 </div>
               )}
@@ -1176,6 +1255,54 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ProjectOverridesPanel({
+  overrides,
+  disabledKeys,
+  onToggle,
+  disabled,
+}: {
+  overrides: ProjectProcessOverride[];
+  disabledKeys: Set<string>;
+  onToggle: (key: string, enabled: boolean) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  const enabledCount = overrides.length - disabledKeys.size;
+  return (
+    <details className="ml-6 rounded-md border border-bambu-dark-tertiary/50 bg-bambu-dark/20">
+      <summary className="cursor-pointer select-none px-3 py-2 text-xs text-bambu-gray hover:text-white">
+        {t('slice.projectOverrides.listSummary', {
+          defaultValue: '{{enabled}} of {{total}} overrides',
+          enabled: enabledCount,
+          total: overrides.length,
+        })}
+      </summary>
+      <ul className="max-h-48 overflow-y-auto border-t border-bambu-dark-tertiary/40 divide-y divide-bambu-dark-tertiary/30">
+        {overrides.map(({ key, value }) => {
+          const enabled = !disabledKeys.has(key);
+          return (
+            <li key={key}>
+              <label className="flex items-start gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-bambu-dark/30">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 rounded border-bambu-dark-tertiary"
+                  checked={enabled}
+                  onChange={(e) => onToggle(key, e.target.checked)}
+                  disabled={disabled}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-white font-mono break-all">{key}</span>
+                  <span className="block text-bambu-gray break-all">{value}</span>
+                </span>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
   );
 }
 

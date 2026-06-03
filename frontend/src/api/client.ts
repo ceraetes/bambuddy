@@ -1389,6 +1389,8 @@ export interface SliceRequest {
   bed_type?: string | null;
   /** For 3MF: map embedded presets to the target printer and merge project_settings overrides. */
   use_project_overrides?: boolean;
+  /** Process settings keys to skip when merging 3MF project overrides. */
+  disabled_project_override_keys?: string[];
 }
 
 // GET /api/v1/slicer/bundles — Printer Preset Bundles imported from

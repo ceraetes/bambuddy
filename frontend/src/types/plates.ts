@@ -36,12 +36,18 @@ interface EmbeddedPresets {
   embedded_process?: string | null;
 }
 
+export interface ProjectProcessOverride {
+  key: string;
+  value: string;
+}
+
 export interface ArchivePlatesResponse extends EmbeddedPresets {
   archive_id: number;
   filename: string;
   plates: PlateMetadata[];
   is_multi_plate: boolean;
   has_gcode?: boolean;
+  project_process_overrides?: ProjectProcessOverride[];
 }
 
 export interface LibraryFilePlatesResponse extends EmbeddedPresets {
@@ -49,6 +55,7 @@ export interface LibraryFilePlatesResponse extends EmbeddedPresets {
   filename: string;
   plates: PlateMetadata[];
   is_multi_plate: boolean;
+  project_process_overrides?: ProjectProcessOverride[];
 }
 
 export interface ViewerPlateSelectionState {

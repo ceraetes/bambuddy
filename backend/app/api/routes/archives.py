@@ -29,6 +29,7 @@ from backend.app.schemas.archive import ArchiveResponse, ArchiveSlim, ArchiveSta
 from backend.app.schemas.print_log import PrintLogResponse
 from backend.app.schemas.slicer import SliceRequest
 from backend.app.services.archive import ArchiveService
+from backend.app.services.slicer_project_overrides import preview_project_process_overrides
 from backend.app.utils.http import build_content_disposition
 from backend.app.utils.safe_path import safe_join_under
 from backend.app.utils.threemf_tools import (
@@ -3128,7 +3129,7 @@ async def upload_archives_bulk(
 async def get_archive_plates(
     archive_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.ARCHIVES_READ),
 ):
     """Get available plates from a multi-plate 3MF archive.
 
@@ -3397,6 +3398,16 @@ async def get_archive_plates(
     except Exception as e:
         logger.warning("Failed to parse plates from archive %s: %s", archive_id, e)
 
+    project_process_overrides: list[dict[str, str]] = []
+    try:
+        project_process_overrides = await preview_project_process_overrides(
+            db,
+            current_user,
+            model_bytes=file_path.read_bytes(),
+        )
+    except Exception as exc:
+        logger.warning("Failed to preview project process overrides for archive %s: %s", archive_id, exc)
+
     # Has gcode iff the plate list was built from .gcode filenames (as opposed
     # to the JSON/PNG fallback for source-only 3MF projects). Callers that need
     # to preview gcode — the viewer, skip-objects — can gate on this instead of
@@ -3410,6 +3421,7 @@ async def get_archive_plates(
         "has_gcode": has_gcode,
         "embedded_printer": embedded_presets["printer"],
         "embedded_process": embedded_presets["process"],
+        "project_process_overrides": project_process_overrides,
     }
 
 
