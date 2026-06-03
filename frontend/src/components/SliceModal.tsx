@@ -151,9 +151,63 @@ const TIER_BONUS: Record<PresetSource, number> = {
   standard: 0.5,
 };
 
+const MIN_FILAMENT_TYPE_MATCH_SCORE = 10;
+const MIN_FILAMENT_COLOR_MATCH_SCORE = 5;
+
+type FilamentSlotRequirement = {
+  type: string;
+  color: string;
+  preset_name?: string;
+};
+
+function scoreFilamentPresetForSlot(
+  p: UnifiedPreset,
+  required: FilamentSlotRequirement,
+  printerName: string | null,
+  compatIndex: PrinterCompatibilityIndex,
+  tier: PresetSource,
+): number {
+  const reqType = required.type.trim().toUpperCase();
+  const reqColor = normalizeColorForCompare(required.color);
+  let score = TIER_BONUS[tier];
+  const presetType = (p.filament_type ?? '').trim().toUpperCase();
+  const presetColor = normalizeColorForCompare(p.filament_colour ?? '');
+  if (reqType && presetType && reqType === presetType) score += MIN_FILAMENT_TYPE_MATCH_SCORE;
+  if (reqColor && presetColor) {
+    if (presetColor === reqColor) score += MIN_FILAMENT_COLOR_MATCH_SCORE;
+    else if (colorsAreSimilar(p.filament_colour ?? '', required.color)) score += 2;
+  }
+  if (presetCompatibility(p, 'filament', printerName, compatIndex) === 'mismatch') {
+    score -= 100;
+  }
+  return score;
+}
+
+function filamentPresetFitsSlot(
+  p: UnifiedPreset,
+  required: FilamentSlotRequirement,
+  printerName: string | null,
+  compatIndex: PrinterCompatibilityIndex,
+): boolean {
+  const embedded = required.preset_name?.trim();
+  if (embedded) {
+    const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+    if (norm(p.name) === norm(embedded) || norm(p.id) === norm(embedded)) return true;
+    if (norm(stripBblPrinterTag(p.name)) === norm(stripBblPrinterTag(embedded))) return true;
+  }
+  const reqType = required.type.trim().toUpperCase();
+  const reqColor = normalizeColorForCompare(required.color);
+  if (!reqType && !reqColor) return false;
+  const minScore = reqType ? MIN_FILAMENT_TYPE_MATCH_SCORE : MIN_FILAMENT_COLOR_MATCH_SCORE;
+  return (
+    scoreFilamentPresetForSlot(p, required, printerName, compatIndex, p.source) >=
+    minScore + TIER_BONUS.standard
+  );
+}
+
 function pickFilamentForSlot(
   by: UnifiedPresetsResponse,
-  required: { type: string; color: string },
+  required: FilamentSlotRequirement,
   printerName: string | null,
   compatIndex: PrinterCompatibilityIndex,
 ): PresetRef | null {
@@ -165,33 +219,27 @@ function pickFilamentForSlot(
   const reqType = required.type.trim().toUpperCase();
   const reqColor = normalizeColorForCompare(required.color);
 
+  if (!reqType && !reqColor) {
+    return pickDefault(by, 'filament');
+  }
+
   let best: { ref: PresetRef; score: number } | null = null;
   for (const tier of SLICE_MODAL_TIER_ORDER) {
     for (const p of by[tier].filament) {
-      let score = 0;
-      const presetType = (p.filament_type ?? '').trim().toUpperCase();
-      const presetColor = normalizeColorForCompare(p.filament_colour ?? '');
-      if (reqType && presetType && reqType === presetType) score += 10;
-      if (reqColor && presetColor) {
-        if (presetColor === reqColor) score += 5;
-        else if (colorsAreSimilar(p.filament_colour ?? '', required.color)) score += 2;
-      }
-      score += TIER_BONUS[tier];
-      // Demote printer-incompatible filaments (#1325): a penalty rather than a
-      // hard skip so the pick still degrades gracefully if every filament
-      // mismatches the selected printer.
-      if (presetCompatibility(p, 'filament', printerName, compatIndex) === 'mismatch') {
-        score -= 100;
-      }
+      const score = scoreFilamentPresetForSlot(p, required, printerName, compatIndex, tier);
       if (best == null || score > best.score) {
         best = { ref: { source: p.source, id: p.id }, score };
       }
     }
   }
-  // Fall back to plain priority pick if every preset scored 0+tier (i.e. no
-  // metadata matched). The fallback is exactly the single-color default —
-  // first preset in the highest-priority non-empty tier.
-  if (best == null) return pickDefault(by, 'filament');
+  const minScore = reqType
+    ? MIN_FILAMENT_TYPE_MATCH_SCORE
+    : reqColor
+      ? MIN_FILAMENT_COLOR_MATCH_SCORE
+      : 0;
+  if (best == null || best.score < minScore + TIER_BONUS.standard) {
+    return pickDefault(by, 'filament');
+  }
   return best.ref;
 }
 
@@ -248,12 +296,24 @@ function pickFilamentFromSpoolman(
 
 function pickFilamentForSlotWithSpoolman(
   by: UnifiedPresetsResponse,
-  required: { type: string; color: string },
+  required: FilamentSlotRequirement,
   printerName: string | null,
   compatIndex: PrinterCompatibilityIndex,
   spools: readonly InventorySpool[],
   models: PrinterModelMap,
 ): PresetRef | null {
+  const embeddedPreset = required.preset_name?.trim();
+  if (embeddedPreset) {
+    const matched = matchPresetByProfile(
+      flattenFilamentPresets(by),
+      embeddedPreset,
+      printerName,
+      models,
+    );
+    if (matched && presetCompatibility(matched, 'filament', printerName, compatIndex) !== 'mismatch') {
+      return { source: matched.source, id: matched.id };
+    }
+  }
   const spool = findSpoolForSlot(spools, required);
   if (spool) {
     const fromSpoolman = pickFilamentFromSpoolman(by, spool, printerName, compatIndex, models);
@@ -708,24 +768,36 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     processManuallyPicked,
   ]);
 
-  // Filament pre-pick: prefer Spoolman profile when it maps to a Tier-1 preset,
-  // else score by type/colour. Existing manual picks are kept when still compatible.
+  // Filament pre-pick: prefer embedded preset name from the 3MF, then Spoolman,
+  // else score by type/colour. Wait for filament-requirements so we don't lock
+  // in a tier-order default against the synthetic empty slot while the preview
+  // slice / project_settings parse is still in flight.
   useEffect(() => {
     const data = presetsQuery.data;
-    if (!data) return;
+    if (!data || !filamentReqsQuery.isSuccess) return;
     const spools = inventorySpoolsQuery.data ?? [];
+    const slotRequirement = (slot: PlateFilament): FilamentSlotRequirement => ({
+      type: slot.type,
+      color: slot.color,
+      preset_name: slot.preset_name,
+    });
     setFilamentPresets((current) => {
       return filamentSlots.map((slot, i) => {
+        const required = slotRequirement(slot);
         const cur = current[i] ?? null;
         if (cur) {
           const p = findPreset(data, cur, 'filament');
-          if (p && presetCompatibility(p, 'filament', selectedPrinterName, compatIndex) !== 'mismatch') {
+          if (
+            p &&
+            presetCompatibility(p, 'filament', selectedPrinterName, compatIndex) !== 'mismatch' &&
+            filamentPresetFitsSlot(p, required, selectedPrinterName, compatIndex)
+          ) {
             return cur;
           }
         }
         return pickFilamentForSlotWithSpoolman(
           data,
-          { type: slot.type, color: slot.color },
+          required,
           selectedPrinterName,
           compatIndex,
           spools,
@@ -735,6 +807,7 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
     });
   }, [
     presetsQuery.data,
+    filamentReqsQuery.isSuccess,
     filamentSlots,
     selectedPrinterName,
     compatIndex,

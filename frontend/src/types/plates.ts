@@ -2,6 +2,8 @@ export interface PlateFilament {
   slot_id: number;
   type: string;
   color: string;
+  /** Embedded ``filament_settings_id`` from project_settings (unsliced 3MF). */
+  preset_name?: string;
   used_grams: number;
   used_meters: number;
   // True when this AMS slot is consumed by the picked plate. False

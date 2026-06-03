@@ -441,12 +441,13 @@ class TestExtractProjectFilamentsFrom3mf:
         proj = {
             "filament_type": ["PLA", "PETG"],
             "filament_colour": ["#000000", "#FFFFFF"],
+            "filament_settings_id": ["Bambu PLA Basic @BBL X1C", "Generic PETG @BBL"],
         }
         with _make_3mf_with({"Metadata/project_settings.config": json.dumps(proj)}) as zf:
             out = extract_project_filaments_from_3mf(zf)
-        assert [(f["slot_id"], f["type"], f["color"]) for f in out] == [
-            (1, "PLA", "#000000"),
-            (2, "PETG", "#FFFFFF"),
+        assert [(f["slot_id"], f["type"], f["color"], f.get("preset_name")) for f in out] == [
+            (1, "PLA", "#000000", "Bambu PLA Basic @BBL X1C"),
+            (2, "PETG", "#FFFFFF", "Generic PETG @BBL"),
         ]
 
     def test_mismatched_array_lengths_use_max_with_blanks(self):

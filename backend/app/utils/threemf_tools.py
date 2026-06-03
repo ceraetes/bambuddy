@@ -671,16 +671,21 @@ def extract_project_filaments_from_3mf(zf: zipfile.ZipFile) -> list[dict]:
         return []
     types_arr = proj.get("filament_type") or []
     colors_arr = proj.get("filament_colour") or []
+    settings_arr = proj.get("filament_settings_id") or []
     slot_count = max(
-        len(types_arr) if isinstance(types_arr, list) else 0, len(colors_arr) if isinstance(colors_arr, list) else 0
+        len(types_arr) if isinstance(types_arr, list) else 0,
+        len(colors_arr) if isinstance(colors_arr, list) else 0,
+        len(settings_arr) if isinstance(settings_arr, list) else 0,
     )
     out: list[dict] = []
     for i in range(slot_count):
+        preset_name = settings_arr[i] if i < len(settings_arr) and isinstance(settings_arr[i], str) else ""
         out.append(
             {
                 "slot_id": i + 1,
                 "type": types_arr[i] if i < len(types_arr) and isinstance(types_arr[i], str) else "",
                 "color": colors_arr[i] if i < len(colors_arr) and isinstance(colors_arr[i], str) else "",
+                "preset_name": preset_name,
                 "used_grams": 0,
                 "used_meters": 0,
             }

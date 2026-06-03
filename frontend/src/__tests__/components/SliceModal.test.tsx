@@ -745,6 +745,79 @@ describe('SliceModal', () => {
     };
   }
 
+  it('pre-picks embedded filament_settings_id instead of the first listed preset', async () => {
+    mockApi.getLibraryFilePlates.mockResolvedValue({
+      file_id: 100,
+      filename: 'Watch.3mf',
+      is_multi_plate: false,
+      plates: [
+        {
+          index: 1,
+          name: 'Plate 1',
+          objects: ['Watch'],
+          has_thumbnail: false,
+          thumbnail_url: null,
+          print_time_seconds: null,
+          filament_used_grams: null,
+          filaments: [],
+        },
+      ],
+    });
+    mockApi.getLibraryFileFilamentRequirements.mockResolvedValue({
+      file_id: 100,
+      filename: 'Watch.3mf',
+      plate_id: 1,
+      filaments: [
+        {
+          slot_id: 1,
+          type: 'PLA',
+          color: '#FFFFFF',
+          preset_name: 'Bambu PLA Basic @BBL A1',
+          used_grams: 0,
+          used_meters: 0,
+          used_in_plate: true,
+        },
+      ],
+    });
+    mockApi.getSlicerPresets.mockResolvedValue(
+      makeUnified({
+        local: {
+          printer: [],
+          process: [],
+          filament: [
+            { id: 'CR-PLA', name: 'CR-PLA', source: 'local', filament_type: 'PLA', filament_colour: '#FFFFFF' },
+          ],
+        },
+        cloud: {
+          printer: [{ id: 'P1', name: 'Bambu Lab A1 0.4 nozzle', source: 'cloud' }],
+          process: [{ id: 'PR1', name: '0.20mm Standard @BBL A1', source: 'cloud' }],
+          filament: [
+            {
+              id: 'bambu-pla-basic',
+              name: 'Bambu PLA Basic @BBL A1',
+              source: 'cloud',
+              filament_type: 'PLA',
+              filament_colour: '#FFFFFF',
+            },
+          ],
+        },
+      }),
+    );
+    mockApi.sliceLibraryFile.mockResolvedValue({
+      job_id: 42,
+      status: 'pending',
+      status_url: '/api/v1/slice-jobs/42',
+    });
+
+    renderWithTracker({
+      source: { kind: 'libraryFile', id: 100, filename: 'Watch.3mf' },
+      onClose: vi.fn(),
+    });
+
+    await waitForPresetDisplay('Bambu PLA Basic @BBL A1');
+    expect(screen.queryByDisplayValue('CR-PLA')).toBeNull();
+  });
+
   it('renders one filament dropdown per plate slot when the source is multi-color', async () => {
     mockApi.getLibraryFilePlates.mockResolvedValue(makeMultiColorPlateResponse());
     mockApi.getLibraryFileFilamentRequirements.mockResolvedValue(makeMultiColorRequirementsResponse());
