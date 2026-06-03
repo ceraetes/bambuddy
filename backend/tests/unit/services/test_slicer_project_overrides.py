@@ -55,6 +55,27 @@ class TestComputeProcessOverrides:
         assert "enable_support" in overrides
         assert "printer_model" not in overrides
 
+    def test_fallback_diffs_against_target_when_source_missing(self):
+        project = process_keys_from_project_settings(
+            {
+                "enable_support": "1",
+                "layer_height": "0.2",
+                "custom_bambu_field": "99",
+            }
+        )
+        target = json.dumps({"layer_height": "0.2", "enable_support": "0", "type": "process"})
+        overrides = compute_process_overrides(project, None, target_process_json=target)
+        assert overrides == {"enable_support": "1"}
+        assert "custom_bambu_field" not in overrides
+        assert "layer_height" not in overrides
+
+    def test_unknown_keys_skipped_without_source_or_target_baseline(self):
+        project = process_keys_from_project_settings(
+            {"enable_support": "1", "some_opaque_profile_key": "42"}
+        )
+        overrides = compute_process_overrides(project, None, target_process_json=None)
+        assert overrides == {"enable_support": "1"}
+
 
 class TestMergePresetJson:
     def test_merges_and_sets_type(self):

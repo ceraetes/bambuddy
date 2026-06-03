@@ -604,6 +604,26 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
   const embeddedPrinter = platesQuery.data?.embedded_printer ?? null;
   const embeddedProcess = platesQuery.data?.embedded_process ?? null;
 
+  // When applying 3MF overrides, default the process to the embedded preset
+  // remapped for the selected printer (e.g. A1 → A1 mini), not the raw @BBL tag.
+  const processPreferredName = useMemo(() => {
+    if (!embeddedProcess) return null;
+    if (!is3mfSource || !useProjectOverrides || !selectedPrinterName) {
+      return embeddedProcess;
+    }
+    return appendBblPrinterTag(
+      stripBblPrinterTag(embeddedProcess),
+      selectedPrinterName,
+      printerModels,
+    );
+  }, [
+    embeddedProcess,
+    is3mfSource,
+    useProjectOverrides,
+    selectedPrinterName,
+    printerModels,
+  ]);
+
   // Printer pre-pick: defaults to the printer the 3MF was prepared for when
   // that preset is available, else the first listed printer. Runs once when
   // presets first arrive; later re-renders preserve any manual choice.
@@ -635,11 +655,17 @@ export function SliceModal({ source, onClose }: SliceModalProps) {
         data,
         selectedPrinterName,
         compatIndex,
-        embeddedProcess,
+        processPreferredName,
         printerModelsQuery.data,
       );
     });
-  }, [presetsQuery.data, selectedPrinterName, compatIndex, embeddedProcess, printerModelsQuery.data]);
+  }, [
+    presetsQuery.data,
+    selectedPrinterName,
+    compatIndex,
+    processPreferredName,
+    printerModelsQuery.data,
+  ]);
 
   // Filament pre-pick: prefer Spoolman profile when it maps to a Tier-1 preset,
   // else score by type/colour. Existing manual picks are kept when still compatible.

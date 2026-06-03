@@ -3585,7 +3585,7 @@ export default {
     projectOverrides: {
       label: 'Use 3MF process overrides',
       description:
-        'Map embedded presets to the selected printer and apply support and other settings saved in the project file.',
+        'Apply support and other process tweaks saved in the project file onto the process preset you select (e.g. after switching printer).',
       mappedProcessHint: 'Process: {{from}} → {{to}}',
     },
   },

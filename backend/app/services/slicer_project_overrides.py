@@ -1,9 +1,10 @@
 """Map embedded 3MF preset names across printers and merge project_settings overrides.
 
 When ``use_project_overrides`` is enabled on a slice request, Bambuddy reads
-``Metadata/project_settings.config``, maps ``@BBL``-tagged preset names to the
-target printer, diffs process keys against the source embedded process preset,
-and merges the delta onto the resolved target process JSON before ``--load-settings``.
+``Metadata/project_settings.config``, diffs process keys against the embedded
+source process preset (stock catalogue profile), and merges only that delta
+onto the **caller-selected** process JSON before ``--load-settings``. Bundle
+preset names are remapped to the target printer separately.
 """
 
 from __future__ import annotations
@@ -196,9 +197,26 @@ def _values_differ(project_val: str, preset_val: str | None) -> bool:
 def compute_process_overrides(
     project_process: dict[str, str],
     source_process_json: str | None,
+    target_process_json: str | None = None,
 ) -> dict[str, str]:
-    """Keys in project_settings that differ from the embedded source process preset."""
-    source_flat = _preset_dict_from_json(source_process_json) if source_process_json else {}
+    """Keys in project_settings that differ from the comparison baseline.
+
+    Baseline is the embedded **stock** process preset when ``print_settings_id``
+    resolves in the catalogue; otherwise the caller's selected process JSON so
+    we only merge settings that differ from what the user already picked (never
+    the full ``project_settings`` process blob).
+    """
+    if source_process_json:
+        baseline_json = source_process_json
+        restrict_to_process_keys = False
+    else:
+        baseline_json = target_process_json
+        # Without the stock preset, ignore unclassified keys — they are usually
+        # the entire embedded profile, not discrete user tweaks.
+        restrict_to_process_keys = True
+
+    baseline_flat = _preset_dict_from_json(baseline_json) if baseline_json else {}
+    baseline_resolved = bool(baseline_json)
 
     overrides: dict[str, str] = {}
     for key, project_val in project_process.items():
@@ -208,7 +226,9 @@ def compute_process_overrides(
             continue
         if classify_settings_key(key) in ("identity", "printer", "filament"):
             continue
-        if source_process_json and not _values_differ(project_val, source_flat.get(key)):
+        if restrict_to_process_keys and classify_settings_key(key) != "process":
+            continue
+        if baseline_resolved and not _values_differ(project_val, baseline_flat.get(key)):
             continue
         overrides[key] = project_val
     return overrides
@@ -331,12 +351,16 @@ async def apply_project_overrides_to_presets(
 ) -> tuple[dict[str, str], bool]:
     """Merge embedded process overrides onto ``presets['process']``.
 
-    Uses the target-printer-mapped equivalent of the embedded process preset as
-    the merge base when it resolves in the catalogue; otherwise keeps the
-    caller-supplied resolved process JSON.
+    The merge base is always the process preset the slice request resolved
+    (user selection in Slice modal). Overrides are only keys in
+    ``project_settings.config`` that differ from the **embedded** stock process
+    preset named in ``print_settings_id`` — e.g. supports enabled on top of
+    ``0.20mm Standard``, not the full MakerWorld process blob.
 
     Returns ``(presets, used_project_overrides)``.
     """
+    _ = target_printer_model  # bundle path remaps names before calling; kept for API stability
+
     project_settings = read_project_settings(model_bytes)
     if not project_settings:
         return presets, False
@@ -354,23 +378,14 @@ async def apply_project_overrides_to_presets(
             except Exception as exc:
                 logger.warning("Could not resolve source process preset %r: %s", source_process_name, exc)
 
-    overrides = compute_process_overrides(project_process, source_process_json)
+    target_process_json = presets.get("process", "")
+    overrides = compute_process_overrides(
+        project_process,
+        source_process_json,
+        target_process_json=target_process_json if not source_process_json else None,
+    )
     if not overrides:
         return presets, False
-
-    target_process_json = presets.get("process", "")
-    mapped_process_name = map_embedded_preset_name(source_process_name, target_printer_model)
-    if mapped_process_name:
-        mapped_ref = await resolve_preset_ref_by_name(db, user, "process", mapped_process_name)
-        if mapped_ref is not None:
-            try:
-                target_process_json = await resolve_preset_ref(db, user, mapped_ref, "process")
-            except Exception as exc:
-                logger.warning(
-                    "Could not resolve mapped process preset %r: %s",
-                    mapped_process_name,
-                    exc,
-                )
 
     presets["process"] = merge_preset_json(target_process_json, overrides, slot="process")
     logger.info(
