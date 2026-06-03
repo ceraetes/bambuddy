@@ -7,6 +7,56 @@ const BBL_MARKER = '@BBL';
 const NOZZLE_SUFFIX_RE = /\s+\d+(?:\.\d+)?\s*nozzle\s*$/i;
 const SETTING_ID_RE = /^[A-Za-z0-9]+$/;
 
+// PRINTER_MODEL_MAP uses display names (e.g. "A1 Mini"); Bambu cloud process
+// presets suffix @BBL with compact tokens (e.g. "A1M").
+const BBL_PRESET_TAG_OVERRIDES: Record<string, string> = {
+  'A1 Mini': 'A1M',
+};
+
+function bblPresetTag(token: string): string {
+  return BBL_PRESET_TAG_OVERRIDES[token] ?? token;
+}
+
+/** Alternate @BBL suffixes for the same printer (cloud A1M vs bundled A1 Mini). */
+const BBL_PRESET_TAG_ALTERNATES: Record<string, string> = {
+  A1M: 'A1 Mini',
+  'A1 Mini': 'A1M',
+};
+
+function bblTagAfterMarker(name: string): string | null {
+  const idx = bblMarkerIndex(name);
+  if (idx < 0) return null;
+  const tag = name.slice(idx + BBL_MARKER.length).trim();
+  return tag || null;
+}
+
+function swapBblTag(name: string, newTag: string): string {
+  const idx = bblMarkerIndex(name);
+  if (idx < 0) return name;
+  return `${name.slice(0, idx + BBL_MARKER.length).trimEnd()} ${newTag}`;
+}
+
+/** Primary resolved names plus equivalent @BBL suffix variants, in order. */
+function expandBblTagCandidates(candidates: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (!seen.has(candidate)) {
+      out.push(candidate);
+      seen.add(candidate);
+    }
+    const tag = bblTagAfterMarker(candidate);
+    const alt = tag ? BBL_PRESET_TAG_ALTERNATES[tag] : null;
+    if (!alt) continue;
+    const variant = swapBblTag(candidate, alt);
+    if (!seen.has(variant)) {
+      out.push(variant);
+      seen.add(variant);
+    }
+  }
+  return out;
+}
+
 export type PrinterModelMap = Record<string, string>;
 
 function bblMarkerIndex(name: string): number {
@@ -49,9 +99,9 @@ function canonicalToken(printerModel: string | null | undefined, models?: Printe
   if (cleaned.startsWith('# ')) cleaned = cleaned.slice(2).trim();
   cleaned = cleaned.replace(NOZZLE_SUFFIX_RE, '').trim();
   if (!cleaned) return null;
-  if (models && cleaned in models) return models[cleaned];
+  if (models && cleaned in models) return bblPresetTag(models[cleaned]);
   const stripped = cleaned.replace(/^Bambu Lab\s+/i, '').trim();
-  return stripped || null;
+  return stripped ? bblPresetTag(stripped) : null;
 }
 
 /** Append the active printer's `@BBL` token to a printer-agnostic base. */
@@ -100,7 +150,9 @@ export function matchPresetByProfile<T extends { id: string; name: string }>(
   printerModel: string | null | undefined,
   models?: PrinterModelMap,
 ): T | null {
-  const candidates = resolveProfileForPrinter(storedProfile, printerModel, models);
+  const candidates = expandBblTagCandidates(
+    resolveProfileForPrinter(storedProfile, printerModel, models),
+  );
   if (candidates.length === 0) return null;
 
   // Prefer the printer-qualified name (or setting id) over a looser base match.
@@ -121,3 +173,4 @@ export function matchPresetByProfile<T extends { id: string; name: string }>(
   }
   return null;
 }
+

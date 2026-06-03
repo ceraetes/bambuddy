@@ -14,6 +14,8 @@ from backend.app.utils.printer_models import normalize_printer_model
 _BBL_MARKER = "@BBL"
 _NOZZLE_SUFFIX_RE = re.compile(r"\s+\d+(?:\.\d+)?\s*nozzle\s*$", re.IGNORECASE)
 _SETTING_ID_RE = re.compile(r"^[A-Za-z0-9]+$")
+# PRINTER_MODEL_MAP uses "A1 Mini"; Bambu cloud process presets use @BBL A1M.
+_BBL_PRESET_TAG_OVERRIDES: dict[str, str] = {"A1 Mini": "A1M"}
 
 
 def split_profile_candidates(raw: str | None) -> list[str]:
@@ -85,6 +87,10 @@ def resolve_profile_for_printer(raw: str | None, printer_model: str | None) -> l
     return [append_bbl_printer_tag(candidate, printer_model) for candidate in split_profile_candidates(raw)]
 
 
+def _bbl_preset_tag(token: str) -> str:
+    return _BBL_PRESET_TAG_OVERRIDES.get(token, token)
+
+
 def _canonical_token(printer_model: str | None) -> str | None:
     """Normalise a printer model or preset name to a canonical ``@BBL`` short token."""
     if not printer_model:
@@ -93,4 +99,7 @@ def _canonical_token(printer_model: str | None) -> str | None:
     if cleaned.startswith("# "):
         cleaned = cleaned[2:].strip()
     cleaned = _NOZZLE_SUFFIX_RE.sub("", cleaned).strip()
-    return normalize_printer_model(cleaned) if cleaned else None
+    if not cleaned:
+        return None
+    model = normalize_printer_model(cleaned)
+    return _bbl_preset_tag(model) if model else None

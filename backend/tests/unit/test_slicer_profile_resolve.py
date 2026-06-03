@@ -58,8 +58,8 @@ class TestStripBblPrinterTag:
 
 class TestAppendBblPrinterTag:
     def test_append_to_base_a1_mini(self):
-        # The user's headline case: keep @BBL, append the A1 mini token.
-        assert append_bbl_printer_tag("Bambu PLA Basic @BBL", "Bambu Lab A1 mini") == "Bambu PLA Basic @BBL A1 Mini"
+        # Cloud process presets use the compact @BBL A1M suffix, not "A1 Mini".
+        assert append_bbl_printer_tag("Bambu PLA Basic @BBL", "Bambu Lab A1 mini") == "Bambu PLA Basic @BBL A1M"
 
     def test_append_to_base_p1s(self):
         assert append_bbl_printer_tag("Bambu PLA Basic @BBL", "P1S") == "Bambu PLA Basic @BBL P1S"
@@ -68,7 +68,7 @@ class TestAppendBblPrinterTag:
         # The SliceModal printer is a full preset name with a nozzle suffix.
         assert (
             append_bbl_printer_tag("0.20mm Standard @BBL", "Bambu Lab A1 mini 0.4 nozzle")
-            == "0.20mm Standard @BBL A1 Mini"
+            == "0.20mm Standard @BBL A1M"
         )
 
     def test_plain_name_gets_marker_and_token(self):
@@ -96,7 +96,7 @@ class TestResolveProfileForPrinter:
     def test_mixed_candidates(self):
         # A comma list mixing a base name and a bare id keeps the id intact.
         assert resolve_profile_for_printer("Bambu PLA Basic @BBL, GFSL05", "A1 Mini") == [
-            "Bambu PLA Basic @BBL A1 Mini",
+            "Bambu PLA Basic @BBL A1M",
             "GFSL05",
         ]
 

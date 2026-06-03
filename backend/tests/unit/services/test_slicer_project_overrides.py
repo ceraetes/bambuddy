@@ -29,7 +29,7 @@ def _zip_with_settings(settings: dict) -> bytes:
 class TestMapEmbeddedPresetName:
     def test_x1c_to_a1_mini(self):
         mapped = map_embedded_preset_name("0.20mm Standard @BBL X1C", "Bambu Lab A1 mini 0.4 nozzle")
-        assert mapped == "0.20mm Standard @BBL A1 Mini"
+        assert mapped == "0.20mm Standard @BBL A1M"
 
 
 class TestComputeProcessOverrides:

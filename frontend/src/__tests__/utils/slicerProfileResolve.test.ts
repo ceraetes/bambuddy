@@ -67,15 +67,15 @@ describe('stripBblPrinterTag', () => {
 });
 
 describe('appendBblPrinterTag', () => {
-  it('appends the A1 mini token to a base (headline case)', () => {
+  it('appends the A1M token for A1 mini (cloud process preset suffix)', () => {
     expect(appendBblPrinterTag('Bambu PLA Basic @BBL', 'Bambu Lab A1 mini', PRINTER_MODELS)).toBe(
-      'Bambu PLA Basic @BBL A1 Mini',
+      'Bambu PLA Basic @BBL A1M',
     );
   });
   it('appends from a full printer-preset name with nozzle suffix', () => {
     expect(
       appendBblPrinterTag('0.20mm Standard @BBL', 'Bambu Lab A1 mini 0.4 nozzle', PRINTER_MODELS),
-    ).toBe('0.20mm Standard @BBL A1 Mini');
+    ).toBe('0.20mm Standard @BBL A1M');
   });
   it('adds the marker to a plain name', () => {
     expect(appendBblPrinterTag('Bambu PLA Basic', 'Bambu Lab P1S', PRINTER_MODELS)).toBe(
@@ -107,7 +107,7 @@ describe('resolveProfileForPrinter', () => {
   });
   it('keeps a bare id intact among candidates', () => {
     expect(resolveProfileForPrinter('Bambu PLA Basic @BBL, GFSL05', 'Bambu Lab A1 mini', PRINTER_MODELS)).toEqual([
-      'Bambu PLA Basic @BBL A1 Mini',
+      'Bambu PLA Basic @BBL A1M',
       'GFSL05',
     ]);
   });
@@ -132,6 +132,20 @@ describe('matchPresetByProfile', () => {
     expect(match?.id).toBe('GFSL06');
   });
 
+  it('prefers @BBL A1M cloud presets over other printers on base match', () => {
+    const cloudPresets = [
+      { id: 'proc-a1m', name: '0.20mm Standard @BBL A1M' },
+      { id: 'proc-x1c', name: '0.20mm Standard @BBL X1C' },
+    ];
+    const match = matchPresetByProfile(
+      cloudPresets,
+      '0.20mm Standard @BBL',
+      'Bambu Lab A1 mini',
+      PRINTER_MODELS,
+    );
+    expect(match?.id).toBe('proc-a1m');
+  });
+
   it('matches a bare setting id against the preset id', () => {
     const match = matchPresetByProfile(presets, 'GFSL05', 'Bambu Lab P1S', PRINTER_MODELS);
     expect(match?.id).toBe('GFSL05');
@@ -147,3 +161,4 @@ describe('matchPresetByProfile', () => {
     expect(matchPresetByProfile(presets, '', 'Bambu Lab P1S', PRINTER_MODELS)).toBeNull();
   });
 });
+
