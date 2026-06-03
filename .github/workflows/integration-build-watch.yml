@@ -29,7 +29,7 @@ jobs:
       changed: ${{ steps.compare.outputs.changed }}
     steps:
       - name: Checkout ceraetes/ci
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ceraetes/ci
           fetch-depth: 0

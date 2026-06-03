@@ -22,7 +22,7 @@ jobs:
       trigger_integration: ${{ steps.integration_gate.outputs.trigger }}
     steps:
       - name: Checkout ceraetes/ci
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ceraetes/ci
           fetch-depth: 0
