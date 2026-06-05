@@ -67,8 +67,7 @@ class TestAppendBblPrinterTag:
     def test_append_from_printer_preset_name(self):
         # The SliceModal printer is a full preset name with a nozzle suffix.
         assert (
-            append_bbl_printer_tag("0.20mm Standard @BBL", "Bambu Lab A1 mini 0.4 nozzle")
-            == "0.20mm Standard @BBL A1M"
+            append_bbl_printer_tag("0.20mm Standard @BBL", "Bambu Lab A1 mini 0.4 nozzle") == "0.20mm Standard @BBL A1M"
         )
 
     def test_plain_name_gets_marker_and_token(self):

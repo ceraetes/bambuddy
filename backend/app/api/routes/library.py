@@ -3187,14 +3187,12 @@ async def _run_slicer_with_fallback(
             filament_jsons.append(await resolve_preset_ref(db, user, ref, "filament"))
 
         if is_3mf and request.use_project_overrides:
-            target_label = await _resolve_target_printer_label(db, user, request)
             disabled_keys = frozenset(request.disabled_project_override_keys)
             presets, used_project_overrides = await apply_project_overrides_to_presets(
                 db,
                 user,
                 model_bytes=model_bytes,
                 presets=presets,
-                target_printer_model=target_label,
                 disabled_override_keys=disabled_keys if disabled_keys else None,
             )
 

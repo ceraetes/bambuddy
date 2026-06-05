@@ -3514,6 +3514,8 @@ export default {
     filament: 'Filament profili',
     filamentSlot: 'Filament {{index}} ({{type}})',
     selectPreset: '— Bir ön ayar seçin —',
+    searchPresets: 'Ön ayarlarda ara…',
+    noPresetsMatch: 'Eşleşen ön ayar yok',
     loadingPresets: 'Ön ayarlar yükleniyor…',
     analyzingPlateFilaments: 'Plaka filamentleri analiz ediliyor…',
     analyzingPlateFilamentsHint: 'Bu plakanın hangi AMS yuvalarını kullandığını keşfetmek için bir önizleme dilimleme çalıştırılıyor. Sonradan önbelleğe alınır — yeniden açma anlıktır.',
@@ -3565,6 +3567,15 @@ export default {
       highTemp: 'Yüksek Sıcaklık Plakası',
       texturedPEI: 'Dokulu PEI Plakası',
       smoothPEI: 'Düz PEI Plakası',
+    },
+    projectOverrides: {
+      label: '3MF işlem geçersiz kılmalarını kullan',
+      description:
+        'Proje dosyasında kayıtlı destek ve diğer işlem ayarlarını seçtiğiniz işlem ön ayarına uygular (ör. yazıcı değiştirdikten sonra).',
+      mappedProcessHint: 'İşlem: {{from}} → {{to}}',
+      embeddedProcessLabel: '3MF işlemi: {{name}}',
+      suggestedProcessMatch: 'Bu yazıcıda önerilen eşleşme: {{name}}',
+      listSummary: '{{total}} geçersiz kılmadan {{enabled}} tanesi',
     },
   },
 
@@ -3688,6 +3699,7 @@ export default {
     measuredWeightError: 'Ölçülen ağırlık {{min}}g ile {{max}}g arasında olmalı.',
     slicerFilament: 'Dilimleyici Filamenti',
     slicerFilamentName: 'Dilimleyici Ön Ayar Adı',
+    inheritedFromFilament: 'Filamentten devralındı',
     slicerPreset: 'Dilimleyici Ön Ayarı',
     searchPresets: 'Filament ön ayarlarında ara...',
     selectedPreset: 'Seçildi',
@@ -5396,6 +5408,7 @@ export default {
       noResults: 'Eşleşen makara yok',
       spools: 'makara',
       addSpool: 'Makara Ekle',
+      inheritedFromFilament: 'Filamentten devralındı',
     },
     settings: {
       tabDevice: 'Cihaz',

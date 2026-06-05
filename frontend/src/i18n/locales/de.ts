@@ -3580,13 +3580,13 @@ export default {
       smoothPEI: 'Smooth PEI Plate',
     },
     projectOverrides: {
-      label: 'Use 3MF process overrides',
+      label: '3MF-Prozess-Überschreibungen verwenden',
       description:
-        'Map embedded presets to the selected printer and apply support and other settings saved in the project file.',
-      mappedProcessHint: 'Process: {{from}} → {{to}}',
-      embeddedProcessLabel: '3MF process: {{name}}',
-      suggestedProcessMatch: 'Suggested match on this printer: {{name}}',
-      listSummary: '{{enabled}} of {{total}} overrides',
+        'Unterstützungen und andere Prozesseinstellungen aus der Projektdatei auf das gewählte Prozessprofil anwenden (z. B. nach Druckerwechsel).',
+      mappedProcessHint: 'Prozess: {{from}} → {{to}}',
+      embeddedProcessLabel: '3MF-Prozess: {{name}}',
+      suggestedProcessMatch: 'Vorgeschlagene Übereinstimmung auf diesem Drucker: {{name}}',
+      listSummary: '{{enabled}} von {{total}} Überschreibungen',
     },
   },
 

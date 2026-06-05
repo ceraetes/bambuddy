@@ -31,6 +31,14 @@ from backend.app.utils.slicer_profile_resolve import (
 logger = logging.getLogger(__name__)
 
 PROJECT_SETTINGS_PATH = "Metadata/project_settings.config"
+_SAFE_PRESET_FETCH_NAME = re.compile(r"^[^/\\<>]+$")
+
+
+def _is_safe_preset_fetch_name(name: str) -> bool:
+    """Reject path-like preset names before building Orca GitHub URLs."""
+    cleaned = name.strip()
+    return bool(cleaned) and ".." not in cleaned and _SAFE_PRESET_FETCH_NAME.match(cleaned) is not None
+
 
 # Keep in sync with library._PROJECT_SETTINGS_SENTINEL_KEYS (#1201).
 PROJECT_SETTINGS_SENTINEL_KEYS = frozenset(
@@ -242,42 +250,6 @@ def _needs_inheritance_materialization(data: dict) -> bool:
     return bool(data.get("inherits") and len(data) < 25)
 
 
-async def _fetch_merged_process_profile_from_github(name: str) -> dict | None:
-    """Materialize a stock process preset without DB (Orca BBL GitHub mirror)."""
-    import httpx
-
-    from backend.app.services.orca_profiles import MAX_INHERITANCE_DEPTH, ORCA_BASE_URL
-
-    async def fetch_profile(profile_name: str) -> dict | None:
-        url = f"{ORCA_BASE_URL}/process/{profile_name}.json"
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            try:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    body = resp.json()
-                    return body if isinstance(body, dict) else None
-            except Exception as exc:
-                logger.debug("GitHub process preset fetch failed for %r: %s", profile_name, exc)
-        return None
-
-    async def merge(data: dict, depth: int = 0) -> dict:
-        if depth >= MAX_INHERITANCE_DEPTH:
-            return data
-        inherits = data.get("inherits")
-        if not inherits or not isinstance(inherits, str):
-            return data
-        base = await fetch_profile(inherits)
-        if base is None:
-            return data
-        resolved = await merge(base, depth + 1)
-        return {**resolved, **data}
-
-    root = await fetch_profile(name)
-    if root is None:
-        return None
-    return await merge(root)
-
-
 async def _materialize_process_baseline_json(db: AsyncSession, preset_json: str) -> str:
     """Flatten inherited stock presets so override diffs match Bambu Studio's orange keys."""
     try:
@@ -295,8 +267,12 @@ async def _materialize_process_baseline_json(db: AsyncSession, preset_json: str)
         logger.warning("Could not materialize inherited process baseline via DB: %s", exc)
     if merged is None or _needs_inheritance_materialization(merged):
         profile_name = str(data.get("inherits") or data.get("name") or "").strip()
-        if profile_name:
-            merged = await _fetch_merged_process_profile_from_github(profile_name)
+        if profile_name and _is_safe_preset_fetch_name(profile_name):
+            from backend.app.services.orca_profiles import fetch_and_cache_base_profile, resolve_preset
+
+            fetched = await fetch_and_cache_base_profile(profile_name, "process", db)
+            if fetched is not None:
+                merged = await resolve_preset(fetched, "process", db)
     if merged is None:
         return preset_json
     return json.dumps(merged)
@@ -516,7 +492,6 @@ async def apply_project_overrides_to_presets(
     *,
     model_bytes: bytes,
     presets: dict[str, str],
-    target_printer_model: str | None,
     disabled_override_keys: frozenset[str] | None = None,
 ) -> tuple[dict[str, str], bool]:
     """Merge embedded process overrides onto ``presets['process']``.
@@ -529,8 +504,6 @@ async def apply_project_overrides_to_presets(
 
     Returns ``(presets, used_project_overrides)``.
     """
-    _ = target_printer_model  # bundle path remaps names before calling; kept for API stability
-
     project_settings = read_project_settings(model_bytes)
     if not project_settings:
         return presets, False

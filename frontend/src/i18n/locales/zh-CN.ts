@@ -3568,13 +3568,13 @@ export default {
       smoothPEI: 'Smooth PEI Plate',
     },
     projectOverrides: {
-      label: 'Use 3MF process overrides',
+      label: '使用 3MF 工艺覆盖',
       description:
-        'Map embedded presets to the selected printer and apply support and other settings saved in the project file.',
-      mappedProcessHint: 'Process: {{from}} → {{to}}',
-      embeddedProcessLabel: '3MF process: {{name}}',
-      suggestedProcessMatch: 'Suggested match on this printer: {{name}}',
-      listSummary: '{{enabled}} of {{total}} overrides',
+        '将项目文件中保存的支撑等工艺调整应用到您选择的工艺预设上（例如在更换打印机之后）。',
+      mappedProcessHint: '工艺：{{from}} → {{to}}',
+      embeddedProcessLabel: '3MF 工艺：{{name}}',
+      suggestedProcessMatch: '此打印机上的建议匹配：{{name}}',
+      listSummary: '{{total}} 项覆盖中的 {{enabled}} 项',
     },
   },
 

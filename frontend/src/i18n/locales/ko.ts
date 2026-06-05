@@ -3318,6 +3318,8 @@ export default {
     filament: '필라멘트 프로필',
     filamentSlot: '필라멘트 {{index}} ({{type}})',
     selectPreset: '— 프리셋 선택 —',
+    searchPresets: '프리셋 검색…',
+    noPresetsMatch: '일치하는 프리셋 없음',
     loadingPresets: '프리셋 불러오는 중…',
     analyzingPlateFilaments: '플레이트 필라멘트 분석 중…',
     analyzingPlateFilamentsHint: '이 플레이트가 사용하는 AMS 슬롯을 확인하기 위해 미리보기 슬라이싱을 실행합니다. 캐시 후에는 재오픈이 즉각적입니다.',
@@ -3372,6 +3374,15 @@ export default {
       highTemp: '고온 플레이트',
       texturedPEI: '텍스처 PEI 플레이트',
       smoothPEI: '매끄러운 PEI 플레이트'
+    },
+    projectOverrides: {
+      label: '3MF 프로세스 재정의 사용',
+      description:
+        '선택한 프로세스 프리셋에 프로젝트 파일에 저장된 서포트 등 프로세스 조정을 적용합니다(예: 프린터 변경 후).',
+      mappedProcessHint: '프로세스: {{from}} → {{to}}',
+      embeddedProcessLabel: '3MF 프로세스: {{name}}',
+      suggestedProcessMatch: '이 프린터에서 제안된 일치: {{name}}',
+      listSummary: '{{total}}개 재정의 중 {{enabled}}개'
     }
   },
   spoolman: {
@@ -3490,6 +3501,7 @@ export default {
     measuredWeightError: '측정된 무게는 {{min}}g과 {{max}}g 사이여야 합니다.',
     slicerFilament: '슬라이서 필라멘트',
     slicerFilamentName: '슬라이서 프리셋 이름',
+    inheritedFromFilament: '필라멘트에서 상속됨',
     slicerPreset: '슬라이서 프리셋',
     searchPresets: '필라멘트 프리셋 검색...',
     selectedPreset: '선택됨',
@@ -5102,7 +5114,8 @@ export default {
       empty: '재고에 스풀 없음',
       noResults: '일치하는 스풀 없음',
       spools: '스풀',
-      addSpool: '스풀 추가'
+      addSpool: '스풀 추가',
+      inheritedFromFilament: '필라멘트에서 상속됨'
     },
     settings: {
       tabDevice: '장치',
