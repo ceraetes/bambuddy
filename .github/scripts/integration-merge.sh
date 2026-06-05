@@ -17,10 +17,20 @@ write_branch_list() {
   done < <(grep -v '^\s*#' "$INTEGRATION_FILE" | grep -v '^\s*$') >>"$dest"
 }
 
-# Merge one branch; auto-resolve prebuilt static/ from the feature branch only.
+# Drop Vite output so content-hashed bundles cannot cause rename/rename conflicts.
+# The Docker image rebuilds static/ in the frontend-builder stage anyway.
+strip_vite_output() {
+  git rm -r --ignore-unmatch static/assets static/index.html 2>/dev/null || true
+  if ! git diff --staged --quiet 2>/dev/null; then
+    git commit -m "chore(ci): strip vite output before merge"
+  fi
+}
+
+# Merge one branch; auto-resolve remaining static/ conflicts from the feature branch.
 merge_branch() {
   local b="$1"
   echo "Merging origin/$b ..."
+  strip_vite_output
   set +e
   git merge "origin/$b" --no-edit
   local merge_rc=$?
