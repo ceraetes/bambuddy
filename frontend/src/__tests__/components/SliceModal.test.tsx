@@ -209,7 +209,7 @@ describe('SliceModal', () => {
 
     await user.click(presetComboInputs()[0]);
     expect(screen.getByText('Imported')).toBeDefined();
-    expect(screen.getByText('Cloud')).toBeDefined();
+    expect(screen.getByText('Bambu Cloud')).toBeDefined();
     expect(screen.getByText('Standard')).toBeDefined();
     expect(screen.getByRole('option', { name: 'Imported X1C 0.4' })).toBeDefined();
     expect(screen.getByRole('option', { name: 'My Custom X1C' })).toBeDefined();

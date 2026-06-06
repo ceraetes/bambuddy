@@ -583,10 +583,10 @@ export function ConfigureAmsSlotModal({
         const orcaId = `orca_${op.setting_id}`;
         coveredIds.add(op.setting_id);
         coveredIds.add(orcaId);
-        if (query && !op.name.toLowerCase().includes(query)) continue;
+        if (query && !fuzzyMatchesHaystack(op.name.toLowerCase(), query)) continue;
         if (printerModel) {
           const presetModel = extractPresetModel(op.name);
-          if (presetModel && presetModel.toUpperCase() !== printerModel.toUpperCase()) continue;
+          if (presetModel && !printerModelTokensEquivalent(presetModel, printerModel)) continue;
         }
         // All Orca Cloud profiles are user-authored, so isUser is always true.
         items.push({ id: orcaId, name: op.name, source: 'orca_cloud', isUser: true });
@@ -604,7 +604,9 @@ export function ConfigureAmsSlotModal({
           || (trayIdx && (cp.setting_id === trayIdx || convertToTrayInfoIdx(cp.setting_id) === trayIdx));
         // Search filter applies to ALL presets (including saved) — no bypass
         if (query && !fuzzyMatchesHaystack(cp.name.toLowerCase(), query)) continue;
-        // Filter by printer model if set (skip for current preset)
+        // Filter by printer model if set (skip for current preset). Uses
+        // alias-aware match so Bambu's "A1 Mini" → "A1M" cloud rename (#1649)
+        // doesn't hide A1 Mini cloud profiles.
         if (!isCurrentPreset && printerModel) {
           const presetModel = extractPresetModel(cp.name);
           if (presetModel && !printerModelTokensEquivalent(presetModel, printerModel)) continue;
