@@ -161,6 +161,15 @@ jobs:
           script: |
             const fs = require('fs');
 
+            const { data: repoInfo } = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            if (!repoInfo.has_issues) {
+              core.warning('Issues are disabled on this repository; skipping pip security issue management.');
+              return;
+            }
+
             // Check for existing open issue
             const existingIssues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
@@ -335,6 +344,15 @@ jobs:
         with:
           script: |
             const fs = require('fs');
+
+            const { data: repoInfo } = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            if (!repoInfo.has_issues) {
+              core.warning('Issues are disabled on this repository; skipping npm security issue management.');
+              return;
+            }
 
             // Check for existing open issue
             const existingIssues = await github.rest.issues.listForRepo({
