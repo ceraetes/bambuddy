@@ -3649,7 +3649,7 @@ function PrinterCard({
                                       slotNumber={slotIdx + 1}
                                     />
                                     <div className="text-[9px] text-white font-bold truncate">
-                                      {tray?.tray_type || t('ams.slotEmpty')}
+                                      {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                                     </div>
                                     {/* Fill bar */}
                                     <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
@@ -3977,7 +3977,7 @@ function PrinterCard({
                               slotNumber={1}
                             />
                             <div className="text-[9px] text-white font-bold truncate">
-                              {tray?.tray_type || t('ams.slotEmpty')}
+                              {tray?.tray_type || t(emptyKind === 'reset' ? 'ams.slotUnconfigured' : 'ams.slotEmpty')}
                             </div>
                             {/* Fill bar */}
                             <div className="mt-1 h-1.5 bg-black/30 rounded-full overflow-hidden">
@@ -5439,8 +5439,10 @@ function PrinterCard({
                 // margin). When the popover is taller than that space — short
                 // viewport, landscape phone, zoomed-in — the body scrolls and
                 // the footer stays pinned, so the Start button is always
-                // reachable (#1458 / #1447 follow-up).
-                maxHeight: `calc(100vh - ${dryingPopoverPos.top}px - 8px)`,
+                // reachable (#1458 / #1447 follow-up). dvh (not vh) so iOS
+                // Safari's bottom toolbar overlay doesn't clip the footer
+                // (#1669, iPhone 17 Safari).
+                maxHeight: `calc(100dvh - ${dryingPopoverPos.top}px - 8px)`,
               }}
               onClick={e => e.stopPropagation()}
             >
